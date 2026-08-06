@@ -97,6 +97,15 @@ fi
 LOG_DIR="$ROOT/.run"
 mkdir -p "$LOG_DIR"
 SERVER_LOG="$LOG_DIR/server.log"
+
+# Corriendo como servicio, launchd abre service.log en modo append y no lo
+# recicla nunca. Vaciarlo aquí cuando ya pesa es lo único que impide que crezca
+# sin techo; launchd sigue escribiendo detrás sin enterarse.
+SERVICE_LOG="$LOG_DIR/service.log"
+if [[ -f "$SERVICE_LOG" && "$(stat -f%z "$SERVICE_LOG" 2>/dev/null || echo 0)" -gt 5242880 ]]; then
+  : >"$SERVICE_LOG"
+fi
+
 TUNNEL_LOG="$LOG_DIR/tunnel.log"
 SERVER_PID=""
 TUNNEL_PID=""

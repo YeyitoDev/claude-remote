@@ -786,6 +786,28 @@ select:focus {
   background: var(--accent-soft);
 }
 
+.session-row.danger {
+  border-color: color-mix(in srgb, var(--red) 40%, var(--border));
+  gap: 8px;
+}
+
+/* La fila es el contenedor; abrir y borrar son dos botones hermanos. */
+.session-row-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  text-align: left;
+}
+
+/* Botón secundario dentro de una fila: no debe robarle el alto. */
+.btn.tight {
+  flex: none;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
 .session-row-main {
   flex: 1;
   min-width: 0;
@@ -1040,8 +1062,38 @@ select:focus {
   background: var(--surface);
 }
 
-.card:active {
+/* La tarjeta dejó de ser un botón: el realce lo dispara lo que sí se pulsa. */
+.card:has(.card-main:active),
+.card:has(.card-title:active) {
   border-color: var(--border-strong);
+}
+
+.card-main {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+/* Ocupa el hueco del padding para que el toque llegue al borde de la tarjeta. */
+.card-del {
+  width: 30px;
+  height: 30px;
+  margin: -6px -5px -6px 0;
+}
+
+.card-danger {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.session-row .icon-button {
+  width: 32px;
+  height: 32px;
+  margin: -4px -4px -4px 0;
 }
 
 .card.alert {
@@ -1059,6 +1111,7 @@ select:focus {
   flex: 1;
   min-width: 0;
   font-weight: 620;
+  text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

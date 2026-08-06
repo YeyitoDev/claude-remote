@@ -7,7 +7,17 @@ import { MODELS, MODES, modelLabel } from '@/lib/models'
 import { useStore } from '@/lib/store'
 import type { ModelRoles, PermissionMode, ProjectView as Project, SessionView, TreeNode } from '@/lib/types'
 import { FileViewer } from './FileViewer'
-import { IconBack, IconBook, IconChat, IconFile, IconFolder, IconPlus, IconRefresh, IconSettings } from './Icons'
+import {
+  IconBack,
+  IconBook,
+  IconChat,
+  IconFile,
+  IconFolder,
+  IconPlus,
+  IconRefresh,
+  IconSettings,
+  IconTrash,
+} from './Icons'
 import { KnowledgePanel } from './KnowledgePanel'
 import { Sheet } from './Sheet'
 
@@ -132,26 +142,78 @@ export function ProjectView({ projectId }: { projectId: string }) {
 }
 
 function SessionCard({ session, onOpen }: { session: SessionView; onOpen: () => void }) {
+  const { removeSession } = useStore()
+  const [confirm, setConfirm] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
   const pending = session.pendingPermissions.length
+
+  const remove = async () => {
+    setBusy(true)
+    setFailure(null)
+    try {
+      await removeSession(session.id)
+    } catch (err: any) {
+      setFailure(err?.message ?? 'No se pudo borrar.')
+      setBusy(false)
+      setConfirm(false)
+    }
+  }
+
   return (
-    <button className={`card${pending ? ' alert' : ''}`} onClick={onOpen}>
+    <div className={`card${pending ? ' alert' : ''}`}>
       <div className="card-head">
         <span className={`dot ${session.status}`} />
-        <span className="card-title">{session.title}</span>
+        <button className="card-title" onClick={onOpen}>
+          {session.title}
+        </button>
         {pending > 0 && <span className="badge">{pending}</span>}
+        <button
+          className="icon-button danger card-del"
+          onClick={() => setConfirm(true)}
+          aria-label={`Borrar ${session.title}`}
+        >
+          <IconTrash size={15} />
+        </button>
       </div>
-      <p className="card-summary">{session.preview ?? 'Sin mensajes todavía.'}</p>
-      <div className="card-foot">
-        <span>{statusLabel(session.status)}</span>
-        <span>{formatCost(session.totalCostUsd)}</span>
-        <span>{relativeTime(session.lastMessageAt ?? session.updatedAt)}</span>
-      </div>
-      <div className="card-meta">
-        <span className="chip">{modelLabel(session.model)}</span>
-        <span className="chip">{MODES.find((m) => m.id === session.permissionMode)?.label ?? session.permissionMode}</span>
-        <span className="chip">{session.numTurns} turnos</span>
-      </div>
-    </button>
+
+      <button className="card-main" onClick={onOpen}>
+        <p className="card-summary">{session.preview ?? 'Sin mensajes todavía.'}</p>
+        <div className="card-foot">
+          <span>{statusLabel(session.status)}</span>
+          <span>{formatCost(session.totalCostUsd)}</span>
+          <span>{relativeTime(session.lastMessageAt ?? session.updatedAt)}</span>
+        </div>
+        <div className="card-meta">
+          <span className="chip">{modelLabel(session.model)}</span>
+          <span className="chip">
+            {MODES.find((m) => m.id === session.permissionMode)?.label ?? session.permissionMode}
+          </span>
+          <span className="chip">{session.numTurns} turnos</span>
+        </div>
+      </button>
+
+      {failure && <div className="notice error">{failure}</div>}
+
+      {confirm && (
+        <div className="card-danger">
+          <span className="field-hint">
+            Se borra la sesión y su historial
+            {session.status === 'busy' || session.status === 'starting'
+              ? ', y se corta el trabajo en curso.'
+              : '. No se toca ningún archivo del proyecto.'}
+          </span>
+          <div className="permission-actions">
+            <button className="btn danger" onClick={() => void remove()} disabled={busy}>
+              {busy ? 'Borrando…' : 'Sí, borrar'}
+            </button>
+            <button className="btn ghost" onClick={() => setConfirm(false)} disabled={busy}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

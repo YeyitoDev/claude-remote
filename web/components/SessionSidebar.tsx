@@ -17,7 +17,7 @@ import {
 } from '@/lib/timeline'
 import type { KnowledgeEntry, PermissionMode, SessionView } from '@/lib/types'
 import { FileViewer } from './FileViewer'
-import { IconChat, IconClose, IconFile, IconPanelLeft, IconPlus } from './Icons'
+import { IconChat, IconClose, IconFile, IconPanelLeft, IconPlus, IconTrash } from './Icons'
 
 type Tab = 'timeline' | 'files' | 'questions' | 'sessions'
 
@@ -301,7 +301,7 @@ function SessionsTab({
   onClose: () => void
   docked: boolean
 }) {
-  const { sessions, openSession, createSession, defaults } = useStore()
+  const { sessions, openSession, createSession, removeSession, back, defaults } = useStore()
   const siblings = sessions.filter((s) => s.projectId === session.projectId)
   const [creating, setCreating] = useState(false)
   const [title, setTitle] = useState('')
@@ -309,6 +309,32 @@ function SessionsTab({
   const [mode, setMode] = useState<PermissionMode>('default')
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const [removeFailure, setRemoveFailure] = useState<string | null>(null)
+
+  /**
+   * Borrar la sesión abierta deja el panel sin nada que mostrar: se cierra y se
+   * vuelve al proyecto. Borrar una hermana solo la quita de la lista.
+   */
+  const remove = async (id: string) => {
+    setRemoving(true)
+    setRemoveFailure(null)
+    try {
+      const wasCurrent = id === session.id
+      await removeSession(id)
+      setConfirmId(null)
+      if (wasCurrent) {
+        onClose()
+        back()
+      }
+    } catch (err: any) {
+      setRemoveFailure(err?.message ?? 'No se pudo borrar.')
+      setConfirmId(null)
+    } finally {
+      setRemoving(false)
+    }
+  }
 
   const create = async () => {
     setBusy(true)
@@ -329,26 +355,54 @@ function SessionsTab({
 
   return (
     <div className="stack">
-      {siblings.map((s) => (
-        <button
-          key={s.id}
-          className={`session-row${s.id === session.id ? ' active' : ''}`}
-          onClick={() => {
-            if (s.id === session.id) return docked ? undefined : onClose()
-            if (!docked) onClose()
-            openSession(s.id)
-          }}
-        >
-          <span className={`dot ${s.status}`} />
-          <span className="session-row-main">
-            <span className="session-row-title">{s.title}</span>
-            <span className="session-row-sub">
-              {statusLabel(s.status)} · {modelLabel(s.model)} · {formatCost(s.totalCostUsd)}
+      {siblings.map((s) =>
+        confirmId === s.id ? (
+          <div key={s.id} className="session-row danger">
+            <span className="session-row-main">
+              <span className="session-row-title">¿Borrar «{s.title}»?</span>
+              <span className="session-row-sub">
+                {s.id === session.id ? 'Es la sesión abierta. ' : ''}
+                Se borra su historial.
+              </span>
             </span>
-          </span>
-          {s.pendingPermissions.length > 0 && <span className="badge">{s.pendingPermissions.length}</span>}
-        </button>
-      ))}
+            <button className="btn danger tight" onClick={() => void remove(s.id)} disabled={removing}>
+              {removing ? '…' : 'Borrar'}
+            </button>
+            <button className="btn ghost tight" onClick={() => setConfirmId(null)} disabled={removing}>
+              No
+            </button>
+          </div>
+        ) : (
+          <div key={s.id} className={`session-row${s.id === session.id ? ' active' : ''}`}>
+            <button
+              className="session-row-open"
+              onClick={() => {
+                if (s.id === session.id) return docked ? undefined : onClose()
+                if (!docked) onClose()
+                openSession(s.id)
+              }}
+            >
+              <span className={`dot ${s.status}`} />
+              <span className="session-row-main">
+                <span className="session-row-title">{s.title}</span>
+                <span className="session-row-sub">
+                  {statusLabel(s.status)} · {modelLabel(s.model)} · {formatCost(s.totalCostUsd)}
+                </span>
+              </span>
+              {s.pendingPermissions.length > 0 && <span className="badge">{s.pendingPermissions.length}</span>}
+            </button>
+            <button
+              className="icon-button danger"
+              onClick={() => setConfirmId(s.id)}
+              aria-label={`Borrar ${s.title}`}
+            >
+              <IconTrash size={15} />
+            </button>
+          </div>
+        ),
+      )}
+
+      {removeFailure && <div className="notice error">{removeFailure}</div>}
 
       {creating ? (
         <div className="panel">
