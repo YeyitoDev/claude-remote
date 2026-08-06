@@ -1,0 +1,19 @@
+{
+  "name": "claude-remote",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sesiones remotas y persistentes de Claude Code, pensadas para manejarse desde el celular",
+  "scripts": {
+    "setup": "npm --prefix server install && npm --prefix web install && npm run icons",
+    "icons": "npm --prefix web run icons",
+    "build": "npm --prefix web run build",
+    "start": "npm --prefix server start",
+    "dev:server": "npm --prefix server run dev",
+    "dev:web": "npm --prefix web run dev",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix web run typecheck",
+    "tunnel": "cloudflared tunnel --url http://localhost:8787",
+    "reset-admin": "npm --prefix server run reset-admin --",
+    "go": "./start.sh",
+    "set-link": "npm --prefix server run set-link --"
+  }
+}
