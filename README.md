@@ -9,7 +9,7 @@ Portal multiusuario para trabajar con Claude Code desde el celular. Cada usuario
 
 ## Puesta en marcha
 
-El proyecto vive en `/Users/sergio/Downloads/claude-remote`. Un solo comando lo levanta todo:
+El proyecto vive en `~/claude-remote`. **No lo muevas a `Descargas`, `Escritorio` ni `Documentos`**: macOS no deja que launchd ejecute nada ahí, y el arranque automático dejaría de funcionar. Un solo comando lo levanta todo:
 
 ```bash
 ./start.sh
@@ -60,6 +60,30 @@ El primer arranque crea el administrador e imprime su token **una sola vez** (el
 ```
 
 Abre en el celular cualquiera de las direcciones que imprime y pega el token. Al ser HTTPS, iOS y Android ofrecen **«Añadir a pantalla de inicio»**.
+
+### Que arranque solo con el Mac
+
+`start.sh` hay que lanzarlo a mano y muere al cerrar la terminal. Para que el servicio esté siempre disponible se instala como agente de launchd:
+
+```bash
+./install-service.sh
+```
+
+Queda registrado en `~/Library/LaunchAgents/com.claude-remote.server.plist` y a partir de ahí **arranca solo al iniciar sesión en el Mac**. Si el servidor termina mal se relanza (con 60 s de espera entre intentos, para no entrar en bucle si el fallo es permanente).
+
+| Opción | |
+|---|---|
+| `./install-service.sh --status` | ¿Está cargado? ¿Responde el puerto? |
+| `./install-service.sh --logs` | Sigue `.run/service.log` |
+| `./install-service.sh --restart` | Lo reinicia |
+| `./install-service.sh --uninstall` | Lo para y lo quita |
+
+Acepta los mismos `--tunnel` y `--port` que `start.sh`; se guardan en el plist. Con `--tunnel tailscale` (o `auto` con Tailscale listo) la URL pública es fija, así que las invitaciones repartidas siguen valiendo entre reinicios.
+
+Dos avisos:
+
+- Es un **agente de usuario**, no un daemon del sistema: arranca cuando inicias sesión en el Mac, no en la pantalla de login.
+- El PATH del servicio lleva grabado el directorio de `node` que había al instalar. Si cambias de versión de Node (nvm), vuelve a ejecutar `./install-service.sh`.
 
 ---
 
@@ -184,7 +208,13 @@ Se abre con el icono de capas en la cabecera. Todo lo que muestra se deriva del 
 - **Línea** — los turnos de la conversación mezclados con las entradas de knowledge que esa misma conversación generó, agrupados por día. Tocar un turno salta a ese punto del chat y lo resalta.
 - **Archivos** — lo que la sesión creó, editó o leyó, con etiqueta por acción. Tocar abre el visor en vivo.
 - **Preguntas** — tus mensajes en orden inverso, para volver a cualquier punto de una conversación larga.
-- **Sesiones** — las del proyecto, con estado y coste, y un botón para abrir otra en paralelo eligiendo modelo y permisos sin salir de la actual.
+- **Sesiones** — las del proyecto, con estado y coste, y un botón para abrir otra en paralelo eligiendo modelo y permisos sin salir de la actual. Cada fila lleva papelera con confirmación; si borras la que tienes abierta, el panel se cierra y vuelves al proyecto.
+
+### Borrar una sesión
+
+La papelera está en tres sitios: en la tarjeta de la sesión dentro del proyecto, en las filas del panel lateral y en «Zona peligrosa» de los ajustes de la sesión. Siempre pide confirmación, y avisa aparte si la sesión está trabajando, porque borrarla corta el turno en curso.
+
+Se borra la sesión y su historial de eventos. **Los archivos del proyecto no se tocan**, y las entradas de knowledge que esa sesión ya generó siguen en el proyecto: lo aprendido sobrevive a la conversación.
 
 ### Aceptación de reglas
 
@@ -360,6 +390,7 @@ Todo bajo `/api` pide `Authorization: Bearer <token>`. `GET /api/health` es púb
 | `GET` | `/api/projects/:id/files/raw?path=&download=1` | Bytes del archivo |
 | `POST` | `/api/projects/:id/files/fetch` | `{"url":"…","path":"…"}` — trae un documento de internet |
 | `POST` | `/api/projects/:id/sessions` | Crear sesión en el proyecto |
+| `PATCH` `DELETE` | `/api/sessions/:id` | Renombrar, cambiar modelo o permisos / borrar sesión e historial |
 | `POST` | `/api/sessions/:id/messages` \| `/interrupt` \| `/wake` \| `/hibernate` | Operar la sesión |
 | `POST` | `/api/sessions/:id/permissions/:pid` | `{"decision":"allow"\|"allow_always"\|"deny"}` |
 | `GET` | `/api/sessions/:id/events?since=N` | Historial desde un cursor |
