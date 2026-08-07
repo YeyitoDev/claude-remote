@@ -160,6 +160,12 @@ export function formatDuration(ms: number): string {
   return `${min} min ${sec} s`
 }
 
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
 export function relativeTime(ts: number | null): string {
   if (!ts) return 'nunca'
   const diff = Date.now() - ts

@@ -208,7 +208,9 @@ Los del proyecto son los valores de partida. **Dentro de una sesión** puedes ca
 Se abre con el icono de capas en la cabecera. Todo lo que muestra se deriva del log de eventos que el cliente ya tiene, salvo el knowledge, que se pide una vez:
 
 - **Línea** — los turnos de la conversación mezclados con las entradas de knowledge que esa misma conversación generó, agrupados por día. Tocar un turno salta a ese punto del chat y lo resalta.
-- **Archivos** — lo que la sesión creó, editó o leyó **y lo que subiste tú**, con etiqueta por acción. Tocar abre el visor en vivo. Lo subido se marca `subido` y se queda así aunque el agente lo lea o lo edite después: de dónde salió el archivo pesa más que lo que se haga luego con él.
+- **Archivos** — lo que la sesión creó, editó o leyó, lo que subiste tú **y lo que hay en la carpeta del proyecto**, con etiqueta por origen, tamaño y fecha. Tocar abre el visor en vivo. Lo subido se marca `subido` y se queda así aunque el agente lo lea o lo edite después: de dónde salió el archivo pesa más que lo que se haga luego con él.
+
+  Cruzar el log con el árbol del proyecto no es redundante: **un documento generado por un script sale de un `Bash`, no de un `Write`**, así que con solo los eventos de herramienta no aparecía por ningún lado — justo el archivo que su dueño quería leer. Lo que está en la carpeta pero esta sesión no tocó se marca `en el proyecto`, sin protagonismo.
 - **Preguntas** — tus mensajes en orden inverso, para volver a cualquier punto de una conversación larga.
 - **Sesiones** — las del proyecto, con estado y coste, y un botón para abrir otra en paralelo eligiendo modelo y permisos sin salir de la actual. Cada fila lleva papelera con confirmación; si borras la que tienes abierta, el panel se cierra y vuelves al proyecto.
 
@@ -234,7 +236,8 @@ Tres barreras, en este orden, **antes** de consultar al modelo:
 
 | Qué | Cómo |
 |---|---|
-| **Ver en vivo** | Toca un archivo del árbol. Markdown renderizado, código con resaltado de bloque, imágenes y PDF embebido. Se refresca solo al cambiar el archivo: puedes ver un documento mientras Claude lo escribe. |
+| **Ver en vivo** | Toca un archivo del árbol. Markdown renderizado, código con resaltado de bloque, imágenes, PDF embebido y **`.docx` convertido** (encabezados, listas, tablas e imágenes). Se refresca solo al cambiar el archivo: puedes ver un documento mientras Claude lo escribe. |
+| **Filtrar por tipo** | Todos / Documentos / Imágenes / Datos / Código, en el árbol del proyecto y en el panel de la sesión. La elección se recuerda. |
 | **Descargar** | Botón ↓ en el visor. Los bytes se piden con el token en la cabecera y se entregan como blob, así que el token nunca viaja en una URL. |
 | **Traer de la red** | Botón «Traer de la red» en Archivos: pega una URL y el servidor la descarga a `descargas/` del proyecto. |
 | **Subir desde el dispositivo** | Clip 📎 en el composer, o «Subir archivo» en Archivos. Aterrizan en `subidas/` del proyecto. |
@@ -297,6 +300,20 @@ Con adjuntos ya no hace falta descripción: unos archivos sueltos también son u
 ### Dictado por voz
 
 El micro del composer transcribe con la API del navegador y añade cada frase a lo que ya lleves escrito. El audio **no pasa por Claude Remote ni por el modelo**: lo transcribe el propio navegador, así que no cuesta tokens. A cambio no está en todas partes —Firefox no lo trae—, y donde no está el botón simplemente no aparece.
+
+### Leer un .docx en la app
+
+El servidor lo convierte a HTML con `mammoth` y el cliente lo pinta **dentro de un `iframe` con `sandbox` y sin `allow-scripts`**. Ese aislamiento es el punto: el documento lo escribe el agente o lo sube cualquier usuario, y un saneador por lista blanca es justo la clase de código que falla en silencio. Aislado, aunque el documento trajera algo raro no puede ejecutarse ni ver el token. El tema claro/oscuro se resuelve con `prefers-color-scheme`, que sí hereda del sistema.
+
+Se conservan encabezados, listas, **negritas**, tablas e imágenes. El `.docx` original se puede descargar siempre desde el mismo visor.
+
+Un detalle que importa: el visor sondea cada 2,5 s para refrescarse solo, y reconvertir un documento de 280 KB en cada sondeo saldría carísimo. El sondeo pide `?meta=1`, que devuelve la ficha sin leer ni convertir nada —**275 bytes y 1 ms, frente a 360 KB y 150 ms**— y solo recarga entero cuando cambia el `mtime`.
+
+### Filtrar por tipo
+
+Todos / Documentos / Imágenes / Datos / Código, tanto en el árbol del proyecto como en el panel de la sesión, con la elección recordada entre visitas. Existe porque un proyecto con un entorno de Python o una carpeta de scripts entierra los dos documentos que su dueño quiere leer, y quien abre la app desde el celular casi siempre busca «el documento», no el código.
+
+Al filtrar, las carpetas que se quedan sin nada dentro desaparecen: una lista de carpetas vacías es peor que no filtrar. Un `.json` cuenta como dato y no como código — quien filtra por código no lo está buscando.
 
 La descarga desde internet corre en tu máquina y detrás de tu router, así que valida el destino: solo http/https, se resuelve el DNS y se rechaza cualquier IP privada o de loopback — también en cada redirección —, con tope de 50 MB y 60 s. Los bytes servidos van con `Content-Security-Policy` restrictivo y `nosniff` para que un HTML del proyecto no se ejecute en el mismo origen que la app.
 

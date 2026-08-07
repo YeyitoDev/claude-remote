@@ -1645,6 +1645,15 @@ select:focus {
   background: var(--surface);
 }
 
+/* El .docx convertido: más alto que el PDF porque se lee de corrido. */
+.viewer-docx {
+  width: 100%;
+  height: 74vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
 /* metadata compacta al pie de las tarjetas */
 
 .card-meta {
@@ -1967,6 +1976,46 @@ select:focus {
 .chip.subido {
   background: color-mix(in srgb, var(--amber) 22%, transparent);
   color: var(--amber);
+}
+
+/* Está en la carpeta pero esta sesión no lo tocó: presente, sin protagonismo. */
+.chip.proyecto {
+  background: var(--surface-2);
+  color: var(--text-faint);
+}
+
+/* filtro por tipo de archivo */
+
+.file-filter {
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: none;
+}
+
+.file-filter::-webkit-scrollbar {
+  display: none;
+}
+
+.file-filter button {
+  white-space: nowrap;
+}
+
+.file-meta {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.file-jump:disabled {
+  opacity: 0.75;
+}
+
+/* `.tree-name` ya empuja con `flex: 1`; esto solo va detrás del nombre. */
+.tree-when {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-faint);
 }
 
 /* preguntas pasadas */

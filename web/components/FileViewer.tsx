@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
+import { formatBytes } from '@/lib/items'
 import { Markdown } from '@/lib/markdown'
 import { useStore } from '@/lib/store'
 import type { FileView } from '@/lib/types'
@@ -42,8 +43,14 @@ export function FileViewer({
     async (force = false) => {
       if (!conn) return
       try {
+        // El sondeo pide solo la ficha: releer el archivo —o reconvertir un
+        // .docx entero— cada 2,5 s para descubrir que no cambió sale caro.
+        if (!force) {
+          const { file: meta } = await api.fileMeta(conn, projectId, path)
+          if (meta.mtimeMs === mtimeRef.current) return
+        }
+
         const { file: next } = await api.file(conn, projectId, path)
-        if (!force && next.mtimeMs === mtimeRef.current) return
         const changed = mtimeRef.current !== 0 && next.mtimeMs !== mtimeRef.current
         mtimeRef.current = next.mtimeMs
         setFile(next)
@@ -142,6 +149,23 @@ export function FileViewer({
             </>
           )}
 
+          {file?.kind === 'docx' && file.content !== null && (
+            <>
+              <iframe
+                className="viewer-docx"
+                title={file.name}
+                // `sandbox` sin `allow-scripts`: el documento lo escribe el
+                // agente o lo sube un usuario, así que se pinta aislado del
+                // origen de la app en vez de confiar en sanearlo.
+                sandbox=""
+                srcDoc={docxDocument(file.content)}
+              />
+              <button className="btn ghost block" onClick={() => void download()}>
+                Descargar el .docx original
+              </button>
+            </>
+          )}
+
           {file?.kind === 'binary' && (
             <div className="empty">
               <div className="empty-inner">
@@ -161,10 +185,39 @@ export function FileViewer({
   )
 }
 
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
-  return `${(n / 1024 / 1024).toFixed(1)} MB`
+/**
+ * Envuelve el HTML del .docx en un documento completo para el iframe.
+ *
+ * El iframe está aislado y no puede leer el tema de la app, así que el claro y
+ * el oscuro se resuelven con `prefers-color-scheme`, que sí hereda del sistema.
+ * El ancho de lectura se acota: un documento a 1200px no se lee.
+ */
+function docxDocument(body: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: light dark; --ink:#1a1a1a; --paper:#fff; --soft:#666; --rule:#e2e2e2; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#e8e8e8; --paper:#161616; --soft:#9a9a9a; --rule:#2e2e2e; }
+  }
+  body {
+    margin: 0; padding: 18px 20px 40px;
+    background: var(--paper); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 44em;
+  }
+  h1,h2,h3,h4,h5,h6 { line-height: 1.25; margin: 1.4em 0 .5em; }
+  h1 { font-size: 1.5em } h2 { font-size: 1.28em } h3 { font-size: 1.12em }
+  p { margin: 0 0 .85em }
+  ul,ol { margin: 0 0 .85em; padding-left: 1.4em }
+  li { margin: .2em 0 }
+  a { color: inherit }
+  img { max-width: 100%; height: auto }
+  table { border-collapse: collapse; width: 100%; margin: 0 0 1em; font-size: .93em }
+  th,td { border: 1px solid var(--rule); padding: 6px 8px; text-align: left; vertical-align: top }
+  th { background: color-mix(in srgb, var(--ink) 7%, transparent) }
+  blockquote { margin: 0 0 .85em; padding-left: 12px; border-left: 3px solid var(--rule); color: var(--soft) }
+</style></head><body>${body}</body></html>`
 }
 
 // ------------------------------------------------------- archivo aún local

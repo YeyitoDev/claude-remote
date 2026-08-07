@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '@/lib/api'
-import { formatCost, relativeTime, statusLabel } from '@/lib/items'
+import { FILTERS, countFiles, loadFilter, pruneTree, saveFilter, type FileFilter } from '@/lib/filetypes'
+import { formatBytes, formatCost, relativeTime, statusLabel } from '@/lib/items'
 import { MODELS, MODES, modelLabel } from '@/lib/models'
 import { useStore } from '@/lib/store'
 import type { ModelRoles, PermissionMode, ProjectView as Project, SessionView, TreeNode } from '@/lib/types'
@@ -226,7 +227,14 @@ function FilesPanel({ projectId }: { projectId: string }) {
   const [fetching, setFetching] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [uploading, setUploading] = useState<string | null>(null)
+  const [filter, setFilter] = useState<FileFilter>('todos')
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // El filtro se lee en un efecto: el HTML es estático y tocar localStorage al
+  // renderizar rompería la hidratación.
+  useEffect(() => setFilter(loadFilter()), [])
+
+  const pruned = useMemo(() => (tree ? pruneTree(tree, filter) : null), [tree, filter])
 
   // Se refresca cuando alguna sesión del proyecto está trabajando: es cuando
   // aparecen archivos nuevos.
@@ -296,17 +304,40 @@ function FilesPanel({ projectId }: { projectId: string }) {
 
       {failure && <div className="notice error">{failure}</div>}
 
+      <div className="tabs file-filter">
+        {FILTERS.map((f) => (
+          <button
+            key={f.id}
+            className={filter === f.id ? 'on' : ''}
+            onClick={() => {
+              setFilter(f.id)
+              saveFilter(f.id)
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {!tree ? (
         <div className="field-hint">Leyendo el árbol…</div>
+      ) : !pruned ? (
+        <div className="empty">
+          <div className="empty-inner">
+            <strong>Nada de ese tipo</strong>
+            <span>El proyecto no tiene archivos en esa categoría.</span>
+          </div>
+        </div>
       ) : (
         <div className="tree">
-          <TreeBranch node={tree} depth={0} defaultOpen onOpenFile={setOpen} />
+          <TreeBranch node={pruned} depth={0} defaultOpen onOpenFile={setOpen} />
         </div>
       )}
 
       <div className="field-hint">
-        Se omiten <code className="inline-code">node_modules</code>, <code className="inline-code">.git</code> y
-        carpetas de build. Toca un archivo para verlo o descargarlo.
+        {pruned && filter !== 'todos' && `${countFiles(pruned)} archivo(s) en el filtro. `}
+        Se omiten <code className="inline-code">node_modules</code>, <code className="inline-code">.git</code>,{' '}
+        <code className="inline-code">.venv</code> y carpetas de build. Toca un archivo para verlo o descargarlo.
       </div>
 
       {open && <FileViewer projectId={projectId} path={open} onClose={() => setOpen(null)} />}
@@ -405,6 +436,7 @@ function TreeBranch({
       <button className="tree-row" style={{ paddingLeft: depth * 14 }} onClick={() => onOpenFile(node.path)}>
         <IconFile />
         <span className="tree-name">{node.name}</span>
+        {node.mtimeMs !== undefined && <span className="tree-when">{relativeTime(node.mtimeMs)}</span>}
         {node.size !== undefined && <span className="tree-size">{formatBytes(node.size)}</span>}
       </button>
     )
@@ -428,12 +460,6 @@ function TreeBranch({
       )}
     </>
   )
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
-  return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
 // ------------------------------------------------------------------ sheets

@@ -74,7 +74,7 @@ export type TreeNode = {
   truncated?: boolean
 }
 
-export type FileKind = 'markdown' | 'text' | 'image' | 'pdf' | 'binary'
+export type FileKind = 'markdown' | 'text' | 'image' | 'pdf' | 'docx' | 'binary'
 
 export type FileView = {
   path: string

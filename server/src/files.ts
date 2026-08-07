@@ -57,6 +57,7 @@ export function mimeFor(path: string): string {
 export function kindFor(path: string, mime: string): FileKind {
   const ext = extname(path).toLowerCase()
   if (ext === '.md' || ext === '.markdown') return 'markdown'
+  if (ext === '.docx') return 'docx'
   if (mime === 'application/pdf') return 'pdf'
   // El SVG se trata como texto: renderizarlo como imagen ejecutaría su script.
   if (mime.startsWith('image/') && mime !== 'image/svg+xml') return 'image'
@@ -64,8 +65,18 @@ export function kindFor(path: string, mime: string): FileKind {
   return 'binary'
 }
 
-/** Metadata + contenido si es texto. El binario se pide por la ruta `raw`. */
-export function readFileView(project: Project, relPath: string): FileView {
+/**
+ * Metadata + contenido si es texto. El binario se pide por la ruta `raw`.
+ *
+ * Con `metaOnly` se devuelve solo la ficha, sin leer ni convertir nada: es lo
+ * que sondea el visor para saber si el archivo cambió. Sin eso, tener abierto
+ * un .docx reconvertiría el documento entero cada dos segundos y medio.
+ */
+export async function readFileView(
+  project: Project,
+  relPath: string,
+  metaOnly = false,
+): Promise<FileView> {
   const full = assertInsideProject(project, relPath)
   if (!existsSync(full)) throw new HttpError(404, 'El archivo no existe.')
   const stat = statSync(full)
@@ -76,10 +87,18 @@ export function readFileView(project: Project, relPath: string): FileView {
   let content: string | null = null
   let truncated = false
 
+  if (metaOnly) {
+    return { path: relPath, name: basename(full), kind, size: stat.size, mtimeMs: stat.mtimeMs, mime, content, truncated }
+  }
+
   if (kind === 'markdown' || kind === 'text') {
     const raw = readFileSync(full)
     truncated = raw.byteLength > MAX_TEXT_BYTES
     content = raw.subarray(0, MAX_TEXT_BYTES).toString('utf8')
+  }
+
+  if (kind === 'docx') {
+    content = await docxToHtml(full)
   }
 
   return {
@@ -100,6 +119,37 @@ export function resolveForStream(project: Project, relPath: string): { full: str
   const stat = statSync(full)
   if (stat.isDirectory()) throw new HttpError(400, 'Eso es una carpeta.')
   return { full, mime: mimeFor(full), size: stat.size }
+}
+
+// -------------------------------------------------------------------- docx
+
+/** Tope del HTML convertido: un .docx con muchas imágenes las trae en base64. */
+const MAX_DOCX_HTML = 4 * 1024 * 1024
+
+/**
+ * Convierte un .docx a HTML para poder leerlo en la app en vez de bajarlo.
+ *
+ * El HTML resultante **no se pinta en el origen de la app**: el cliente lo mete
+ * en un iframe con `sandbox` y sin `allow-scripts`. Por eso aquí no hace falta
+ * un saneador por lista blanca —que es justo la clase de código que se rompe en
+ * silencio—: aunque el documento trajera algo raro, no puede ejecutarse ni ver
+ * el token. Aun así se quitan script y style, que no aportan nada a la lectura.
+ */
+async function docxToHtml(full: string): Promise<string> {
+  const mammoth = await import('mammoth')
+  try {
+    const { value } = await mammoth.convertToHtml({ path: full })
+    const clean = value.replace(/<\s*(script|style)[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+    if (clean.length > MAX_DOCX_HTML) {
+      return `${clean.slice(0, MAX_DOCX_HTML)}<p><em>[documento recortado para mostrarlo]</em></p>`
+    }
+    return clean || '<p><em>El documento está vacío.</em></p>'
+  } catch (err) {
+    // Un .docx corrupto o protegido no debe tumbar el visor: se puede descargar.
+    return `<p><em>No se pudo convertir el documento: ${
+      err instanceof Error ? err.message : String(err)
+    }</em></p>`
+  }
 }
 
 // ------------------------------------------------------------- subir archivo

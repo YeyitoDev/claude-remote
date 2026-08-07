@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '@/lib/api'
-import { formatCost, formatDuration, statusLabel } from '@/lib/items'
+import { FILTERS, loadFilter, matches, saveFilter, type FileFilter } from '@/lib/filetypes'
+import { formatBytes, formatCost, formatDuration, relativeTime, statusLabel } from '@/lib/items'
 import { Markdown } from '@/lib/markdown'
 import { MODELS, modeLabel, modelLabel } from '@/lib/models'
 import { useStore } from '@/lib/store'
@@ -14,8 +15,9 @@ import {
   shortTime,
   touchedFiles,
   type TimelineItem,
+  type TouchedFile,
 } from '@/lib/timeline'
-import type { KnowledgeEntry, PermissionMode, SessionView } from '@/lib/types'
+import type { KnowledgeEntry, PermissionMode, SessionView, TreeNode } from '@/lib/types'
 import { FileViewer } from './FileViewer'
 import { IconChat, IconClose, IconFile, IconPanelLeft, IconPlus, IconTrash } from './Icons'
 
@@ -124,7 +126,7 @@ export function SessionSidebar({
         <div className="sidebar-body">
           {tab === 'timeline' && <TimelinePanel items={timeline} onJump={jumpTo} />}
           {tab === 'files' && (
-            <FilesTab files={files} onOpen={setOpenFile} onJump={jumpTo} empty={log.length === 0} />
+            <FilesTab session={session} files={files} onOpen={setOpenFile} onJump={jumpTo} />
           )}
           {tab === 'questions' && <QuestionsTab questions={questions} onJump={jumpTo} />}
           {tab === 'sessions' && <SessionsTab session={session} onClose={onClose} docked={docked} />}
@@ -221,48 +223,171 @@ function TimelineRow({ item, onJump }: { item: TimelineItem; onJump: (seq: numbe
 
 // ------------------------------------------------------------------- archivos
 
+type FileRow = {
+  path: string
+  name: string
+  action: TouchedFile['action'] | 'en el proyecto'
+  /** Null cuando el archivo no salió de esta conversación: no hay a dónde saltar. */
+  seq: number | null
+  times: number
+  failed: boolean
+  size?: number
+  mtimeMs?: number
+}
+
+function flattenTree(node: TreeNode, out: TreeNode[] = []): TreeNode[] {
+  if (node.type === 'file') out.push(node)
+  for (const child of node.children ?? []) flattenTree(child, out)
+  return out
+}
+
+/**
+ * Archivos de la sesión y del proyecto, en una sola lista.
+ *
+ * Con solo el log de eventos se perdía justo lo que más importa: un documento
+ * generado por un script sale de un `Bash`, no de un `Write`, así que no
+ * aparecía por ningún lado. Se cruza con el árbol del proyecto para que lo
+ * producido cuente aunque no pasara por una herramienta de archivos.
+ */
 function FilesTab({
+  session,
   files,
   onOpen,
   onJump,
-  empty,
 }: {
-  files: ReturnType<typeof touchedFiles>
+  session: SessionView
+  files: TouchedFile[]
   onOpen: (path: string) => void
   onJump: (seq: number) => void
-  empty: boolean
 }) {
-  if (!files.length) {
-    return (
-      <p className="field-hint">
-        {empty ? 'Abre la conversación para ver los archivos.' : 'Esta sesión todavía no ha tocado archivos.'}
-      </p>
-    )
-  }
+  const { conn, sessions } = useStore()
+  const [tree, setTree] = useState<TreeNode | null>(null)
+  const [filter, setFilter] = useState<FileFilter>('todos')
+
+  useEffect(() => setFilter(loadFilter()), [])
+
+  const working = sessions.some(
+    (s) => s.projectId === session.projectId && (s.status === 'busy' || s.status === 'starting'),
+  )
+
+  useEffect(() => {
+    if (!conn) return
+    let cancelled = false
+    const load = () =>
+      api
+        .tree(conn, session.projectId)
+        .then((res) => !cancelled && setTree(res.tree))
+        .catch(() => undefined)
+
+    void load()
+    // Mientras el agente trabaja aparecen archivos nuevos; parado no hace falta.
+    const timer = working ? setInterval(load, 4000) : null
+    return () => {
+      cancelled = true
+      if (timer) clearInterval(timer)
+    }
+  }, [conn, session.projectId, working])
+
+  const rows = useMemo<FileRow[]>(() => {
+    const byPath = new Map<string, FileRow>()
+    for (const file of files) {
+      byPath.set(file.path, {
+        path: file.path,
+        name: file.name,
+        action: file.action,
+        seq: file.seq,
+        times: file.times,
+        failed: file.failed,
+      })
+    }
+
+    for (const node of tree ? flattenTree(tree) : []) {
+      const existing = byPath.get(node.path)
+      // El árbol sabe el tamaño y la fecha; el log sabe quién lo tocó y cuándo.
+      byPath.set(
+        node.path,
+        existing
+          ? { ...existing, size: node.size, mtimeMs: node.mtimeMs }
+          : {
+              path: node.path,
+              name: node.name,
+              action: 'en el proyecto',
+              seq: null,
+              times: 0,
+              failed: false,
+              size: node.size,
+              mtimeMs: node.mtimeMs,
+            },
+      )
+    }
+
+    return [...byPath.values()]
+      .filter((row) => matches(row.name, filter))
+      .sort((a, b) => {
+        // Lo que tocó esta sesión va primero: es de lo que se está hablando.
+        if ((a.seq === null) !== (b.seq === null)) return a.seq === null ? 1 : -1
+        if (a.seq !== null && b.seq !== null) return b.seq - a.seq
+        return (b.mtimeMs ?? 0) - (a.mtimeMs ?? 0)
+      })
+  }, [files, tree, filter])
 
   return (
     <div className="stack">
-      {files.map((file) => {
-        // Una ruta que sigue siendo absoluta quedó fuera del proyecto: el
-        // visor no puede abrirla, así que no se ofrece como si pudiera.
-        const openable = !file.path.startsWith('/')
-        return (
-          <div key={file.path} className={`file-row${file.failed ? ' failed' : ''}`}>
-            <button className="file-main" onClick={() => openable && onOpen(file.path)} disabled={!openable}>
-              <IconFile />
-              <span className="file-text">
-                <span className="file-name">{file.name}</span>
-                <span className="file-path">{file.path}</span>
-              </span>
-            </button>
-            <button className="file-jump" onClick={() => onJump(file.seq)}>
-              <span className={`chip ${file.action}`}>
-                {file.failed ? (openable ? 'falló' : 'bloqueado') : file.action}
-              </span>
-            </button>
-          </div>
-        )
-      })}
+      <div className="tabs file-filter">
+        {FILTERS.map((f) => (
+          <button
+            key={f.id}
+            className={filter === f.id ? 'on' : ''}
+            onClick={() => {
+              setFilter(f.id)
+              saveFilter(f.id)
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {!rows.length ? (
+        <p className="field-hint">
+          {filter === 'todos'
+            ? 'Todavía no hay archivos en el proyecto.'
+            : 'No hay archivos de ese tipo. Prueba con «Todos».'}
+        </p>
+      ) : (
+        rows.map((file) => {
+          // Una ruta que sigue siendo absoluta quedó fuera del proyecto: el
+          // visor no puede abrirla, así que no se ofrece como si pudiera.
+          const openable = !file.path.startsWith('/')
+          const meta = [
+            file.size !== undefined ? formatBytes(file.size) : null,
+            file.mtimeMs !== undefined ? relativeTime(file.mtimeMs) : null,
+            file.times > 1 ? `${file.times} veces` : null,
+          ].filter(Boolean)
+
+          return (
+            <div key={file.path} className={`file-row${file.failed ? ' failed' : ''}`}>
+              <button className="file-main" onClick={() => openable && onOpen(file.path)} disabled={!openable}>
+                <IconFile />
+                <span className="file-text">
+                  <span className="file-name">{file.name}</span>
+                  <span className="file-path">{file.path}</span>
+                  {meta.length > 0 && <span className="file-meta">{meta.join(' · ')}</span>}
+                </span>
+              </button>
+              <button
+                className="file-jump"
+                onClick={() => file.seq !== null && onJump(file.seq)}
+                disabled={file.seq === null}
+              >
+                <span className={`chip ${file.action === 'en el proyecto' ? 'proyecto' : file.action}`}>
+                  {file.failed ? (openable ? 'falló' : 'bloqueado') : file.action}
+                </span>
+              </button>
+            </div>
+          )
+        })
+      )}
     </div>
   )
 }

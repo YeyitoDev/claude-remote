@@ -97,7 +97,7 @@ export type TreeNode = {
 }
 
 /** Cómo se debe visualizar un archivo en el cliente. */
-export type FileKind = 'markdown' | 'text' | 'image' | 'pdf' | 'binary'
+export type FileKind = 'markdown' | 'text' | 'image' | 'pdf' | 'docx' | 'binary'
 
 export type FileView = {
   path: string

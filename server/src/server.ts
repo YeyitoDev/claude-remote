@@ -214,11 +214,11 @@ export function buildServer(manager: SessionManager) {
 
   app.get(
     '/api/projects/:id/files',
-    wrap((req, res) => {
+    wrap(async (req, res) => {
       const project = projects.require(req.params.id, req.user)
       const path = String(req.query.path ?? '')
       if (!path) throw new HttpError(400, 'Falta el parámetro path.')
-      res.json({ file: readFileView(project, path) })
+      res.json({ file: await readFileView(project, path, req.query.meta === '1') })
     }),
   )
 

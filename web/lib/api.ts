@@ -112,6 +112,9 @@ export const api = {
   // archivos
   file: (c: Connection, id: string, path: string) =>
     request<{ file: FileView }>(c, `/api/projects/${id}/files?path=${encodeURIComponent(path)}`),
+  /** Solo la ficha: el servidor no lee ni convierte el archivo. Para sondear. */
+  fileMeta: (c: Connection, id: string, path: string) =>
+    request<{ file: FileView }>(c, `/api/projects/${id}/files?meta=1&path=${encodeURIComponent(path)}`),
   fetchFromWeb: (c: Connection, id: string, body: { url: string; path?: string }) =>
     request<{ path: string; size: number; mime: string }>(c, `/api/projects/${id}/files/fetch`, post(body)),
   uploadFile: (c: Connection, id: string, file: File) =>
