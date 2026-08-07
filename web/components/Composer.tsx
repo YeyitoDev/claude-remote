@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
+import { useDictation } from '@/lib/speech'
 import { useStore } from '@/lib/store'
 import type { SessionView } from '@/lib/types'
-import { IconClose, IconPaperclip, IconSend, IconStop } from './Icons'
+import { FileViewer } from './FileViewer'
+import { IconClose, IconMic, IconPaperclip, IconSend, IconStop } from './Icons'
 import { SessionControls } from './SessionControls'
 
 /**
@@ -26,6 +28,7 @@ export function Composer({ session }: { session: SessionView }) {
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [preview, setPreview] = useState<string | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const seq = useRef(0)
@@ -43,35 +46,92 @@ export function Composer({ session }: { session: SessionView }) {
   const uploading = attachments.some((a) => a.status === 'uploading')
   const ready = attachments.filter((a) => a.status === 'ready')
 
-  const attach = async (files: FileList | null) => {
-    if (!files?.length || !conn) return
-    const chosen = Array.from(files)
-    const keyed = chosen.map((file) => ({ file, key: `a${seq.current++}` }))
+  const attach = useCallback(
+    async (files: FileList | File[] | null) => {
+      if (!files || !conn) return
+      const chosen = Array.from(files)
+      if (!chosen.length) return
+      const keyed = chosen.map((file) => ({ file, key: `a${seq.current++}` }))
 
-    setAttachments((prev) => [
-      ...prev,
-      ...keyed.map(({ file, key }) => ({ key, name: file.name, status: 'uploading' as const })),
-    ])
+      setAttachments((prev) => [
+        ...prev,
+        ...keyed.map(({ file, key }) => ({ key, name: file.name, status: 'uploading' as const })),
+      ])
 
-    // En serie: son subidas grandes desde el móvil y en paralelo se pisan el
-    // ancho de banda entre ellas sin terminar antes.
-    for (const { file, key } of keyed) {
-      try {
-        const { path } = await api.uploadFile(conn, session.projectId, file)
-        setAttachments((prev) =>
-          prev.map((a) => (a.key === key ? { ...a, status: 'ready' as const, path } : a)),
-        )
-      } catch (err: any) {
-        setAttachments((prev) =>
-          prev.map((a) =>
-            a.key === key
-              ? { ...a, status: 'failed' as const, error: err?.message ?? 'No se pudo subir.' }
-              : a,
-          ),
-        )
+      // En serie: son subidas grandes desde el móvil y en paralelo se pisan el
+      // ancho de banda entre ellas sin terminar antes.
+      for (const { file, key } of keyed) {
+        try {
+          const { path } = await api.uploadFile(conn, session.projectId, file)
+          setAttachments((prev) =>
+            prev.map((a) => (a.key === key ? { ...a, status: 'ready' as const, path } : a)),
+          )
+        } catch (err: any) {
+          setAttachments((prev) =>
+            prev.map((a) =>
+              a.key === key
+                ? { ...a, status: 'failed' as const, error: err?.message ?? 'No se pudo subir.' }
+                : a,
+            ),
+          )
+        }
       }
+    },
+    [conn, session.projectId],
+  )
+
+  /**
+   * Arrastrar archivos a cualquier punto de la conversación, no solo al clip.
+   *
+   * Los listeners van en `window` porque el objetivo útil es toda la pantalla:
+   * obligar a soltar dentro de un recuadro concreto es justo lo que hace
+   * incómodo el arrastre en otras apps. El contador evita que el overlay
+   * parpadee al pasar por encima de los hijos, que también emiten dragleave.
+   */
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
+
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+
+    const onEnter = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      dragDepth.current++
+      setDragging(true)
     }
-  }
+    const onOver = (e: DragEvent) => {
+      // Sin esto el navegador abre el archivo en vez de dejarlo soltar.
+      if (hasFiles(e)) e.preventDefault()
+    }
+    const onLeave = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      dragDepth.current = Math.max(0, dragDepth.current - 1)
+      if (dragDepth.current === 0) setDragging(false)
+    }
+    const onDrop = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      dragDepth.current = 0
+      setDragging(false)
+      void attach(e.dataTransfer?.files ?? null)
+    }
+
+    window.addEventListener('dragenter', onEnter)
+    window.addEventListener('dragover', onOver)
+    window.addEventListener('dragleave', onLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragenter', onEnter)
+      window.removeEventListener('dragover', onOver)
+      window.removeEventListener('dragleave', onLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [attach])
+
+  // Lo dictado se añade a lo que ya haya escrito, no lo sustituye.
+  const dictation = useDictation((phrase) =>
+    setText((prev) => (prev.trim() ? `${prev.replace(/\s+$/, '')} ${phrase}` : phrase)),
+  )
 
   const submit = async () => {
     const value = text.trim()
@@ -109,7 +169,16 @@ export function Composer({ session }: { session: SessionView }) {
         <div className="attachments">
           {attachments.map((a) => (
             <span key={a.key} className={`attachment ${a.status}`} title={a.error ?? a.path ?? a.name}>
-              <span className="attachment-name">{a.name}</span>
+              {/* Ya subido: se puede abrir en el visor para comprobar qué se
+                  mandó antes de enviarlo. Mientras sube no hay nada que ver. */}
+              <button
+                className="attachment-name"
+                onClick={() => a.path && setPreview(a.path)}
+                disabled={a.status !== 'ready'}
+                aria-label={a.status === 'ready' ? `Ver ${a.name}` : a.name}
+              >
+                {a.name}
+              </button>
               <span className="attachment-state">
                 {a.status === 'uploading' ? 'subiendo…' : a.status === 'failed' ? 'falló' : 'listo'}
               </span>
@@ -123,6 +192,10 @@ export function Composer({ session }: { session: SessionView }) {
             </span>
           ))}
         </div>
+      )}
+
+      {preview && (
+        <FileViewer projectId={session.projectId} path={preview} onClose={() => setPreview(null)} />
       )}
 
       <div className="composer-row">
@@ -145,6 +218,18 @@ export function Composer({ session }: { session: SessionView }) {
         >
           <IconPaperclip size={19} />
         </button>
+
+        {dictation.supported && (
+          <button
+            className={`attach${dictation.listening ? ' listening' : ''}`}
+            onClick={dictation.toggle}
+            disabled={busy}
+            aria-label={dictation.listening ? 'Parar el dictado' : 'Dictar'}
+            aria-pressed={dictation.listening}
+          >
+            <IconMic size={19} />
+          </button>
+        )}
 
         <textarea
           ref={ref}
@@ -177,14 +262,27 @@ export function Composer({ session }: { session: SessionView }) {
         </button>
       </div>
 
-      {(failure || uploading || working) && (
+      {(failure || dictation.error || uploading || dictation.listening || working) && (
         <div className="composer-hint">
           <span>
             {failure ??
+              dictation.error ??
               (uploading
                 ? 'Subiendo archivos…'
-                : 'Claude está trabajando — puedes encolar otro mensaje.')}
+                : dictation.listening
+                  ? 'Escuchando… toca el micro para parar.'
+                  : 'Claude está trabajando — puedes encolar otro mensaje.')}
           </span>
+        </div>
+      )}
+
+      {dragging && (
+        <div className="drop-overlay">
+          <div className="drop-inner">
+            <IconPaperclip size={26} />
+            <strong>Suelta los archivos</strong>
+            <span>Se suben al proyecto y se adjuntan al mensaje.</span>
+          </div>
         </div>
       )}
     </div>

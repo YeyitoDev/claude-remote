@@ -695,6 +695,50 @@ select:focus {
   opacity: 0.35;
 }
 
+.attach.listening {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* arrastrar archivos a la conversación */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(3px);
+  /* El overlay es solo aviso: el drop lo escucha `window`, y si el overlay
+     capturara el puntero se comería el dragleave y se quedaría pegado. */
+  pointer-events: none;
+}
+
+.drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 30px 34px;
+  border-radius: var(--radius);
+  border: 2px dashed var(--accent);
+  background: var(--surface);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.drop-inner strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.drop-inner span {
+  font-size: 12.5px;
+}
+
 /* archivos adjuntos al mensaje que se está escribiendo */
 
 .attachments {
@@ -716,12 +760,22 @@ select:focus {
   font-size: 12px;
 }
 
+/* El nombre abre el visor; mientras sube no hay nada que ver y va inerte. */
 .attachment-name {
   min-width: 0;
   max-width: 150px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+
+.attachment-name:disabled {
+  text-decoration: none;
+  color: var(--text-muted);
 }
 
 .attachment-state {
@@ -1998,6 +2052,60 @@ select:focus {
     border-right: none;
     animation: none;
     height: 100%;
+  }
+}
+
+/* ------------------------------------------------------------- escritorio */
+
+/* En una pantalla grande la conversación se quedaba en una columna de 900px
+   con el resto del monitor vacío. Se ensancha por tramos, y el mensaje del
+   usuario se queda más estrecho que el del agente a propósito: uno se lee de
+   un vistazo, el otro lleva código, tablas y salidas de herramienta. */
+@media (min-width: 1100px) {
+  .app {
+    max-width: 1080px;
+  }
+
+  .stream {
+    padding: 20px 26px 10px;
+    gap: 12px;
+  }
+
+  .composer {
+    padding: 12px 26px calc(12px + var(--safe-bottom));
+  }
+
+  .bubble.user {
+    max-width: 68%;
+  }
+
+  .bubble.assistant {
+    max-width: 100%;
+  }
+
+  .shell.split {
+    grid-template-columns: 360px minmax(0, 1fr);
+    max-width: 1600px;
+  }
+}
+
+@media (min-width: 1500px) {
+  .app {
+    max-width: 1240px;
+  }
+
+  .stream {
+    padding: 24px 34px 12px;
+    gap: 13px;
+  }
+
+  .composer {
+    padding: 14px 34px calc(14px + var(--safe-bottom));
+  }
+
+  .shell.split {
+    grid-template-columns: 400px minmax(0, 1fr);
+    max-width: 1840px;
   }
 }
 

@@ -89,8 +89,10 @@ export const api = {
   projects: (c: Connection) => request<{ projects: ProjectView[] }>(c, '/api/projects'),
   project: (c: Connection, id: string) =>
     request<{ project: ProjectView; sessions: SessionView[] }>(c, `/api/projects/${id}`),
-  createProject: (c: Connection, body: { name: string; description?: string }) =>
+  createProject: (c: Connection, body: { name: string; description?: string; deferKickoff?: boolean }) =>
     request<{ project: ProjectView; session: SessionView | null }>(c, '/api/projects', post(body)),
+  kickoff: (c: Connection, id: string, body: { sessionId?: string; attachments?: string[] }) =>
+    request<{ session: SessionView }>(c, `/api/projects/${id}/kickoff`, post(body)),
   updateProject: (
     c: Connection,
     id: string,

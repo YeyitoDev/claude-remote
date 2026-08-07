@@ -201,6 +201,8 @@ Cada proyecto elige qué modelo usa para qué. Planificar, aprobar permisos y re
 
 Los del proyecto son los valores de partida. **Dentro de una sesión** puedes cambiar modelo y modo de permisos desde los dos controles que hay sobre el campo de texto: se aplican en caliente, sin reiniciar el proceso ni perder el contexto. Cambiar de modelo invalida la caché de prompt, así que el primer turno tras el cambio cuesta algo más.
 
+**Salvo «Sin permisos».** El CLI decide `bypassPermissions` al arrancar y rechaza entrar o salir de ese modo en caliente. Entrar o salir de él reinicia el proceso de la sesión, que reanuda con `resume`: la conversación sigue intacta y se avisa en la línea. Si el CLI rechaza cualquier otro cambio de modo, se reinicia igual — es preferible a dejar la sesión diciendo un modo y comportándose como otro.
+
 ### Panel lateral de la sesión
 
 Se abre con el icono de capas en la cabecera. Todo lo que muestra se deriva del log de eventos que el cliente ya tiene, salvo el knowledge, que se pide una vez:
@@ -239,7 +241,9 @@ Tres barreras, en este orden, **antes** de consultar al modelo:
 
 ### Adjuntar archivos a un mensaje
 
-El clip del composer abre el selector del sistema — en el celular, eso incluye la cámara y el carrete. Puedes elegir varios; suben **en cuanto los eliges**, no al enviar, así que un archivo demasiado grande falla mientras todavía estás escribiendo. Cada uno aparece como una etiqueta con su estado (`subiendo…` / `listo` / `falló`) y se puede quitar antes de enviar.
+El clip del composer abre el selector del sistema — en el celular, eso incluye la cámara y el carrete. En escritorio también puedes **arrastrar archivos a cualquier punto de la conversación**: el objetivo es toda la pantalla, no un recuadro concreto.
+
+Puedes elegir varios; suben **en cuanto los eliges**, no al enviar, así que un archivo demasiado grande falla mientras todavía estás escribiendo. Cada uno aparece como una etiqueta con su estado (`subiendo…` / `listo` / `falló`), se puede quitar antes de enviar y, una vez subido, **tocar el nombre lo abre en el visor** para comprobar qué mandas.
 
 Al enviar, el mensaje que ve Claude lleva las rutas delante:
 
@@ -260,6 +264,37 @@ Detalles que importan:
 - **El nombre se sanea**: se queda solo el nombre base, sin rutas ni dotfiles ni caracteres de control, así que `../../../evil.txt` acaba como `subidas/evil.txt`. `assertInsideProject` es la segunda red.
 - **No se pisa nada**: si el nombre ya existe se guarda como `nota-2.txt`. Dos `IMG_0001.jpg` del carrete son dos archivos.
 - El cuerpo de la subida **no pasa por el parser de JSON**, que si no se comería un `.json` entero y lo rechazaría por el tope de 2 MB.
+
+### Archivos en el arranque del proyecto
+
+Al crear un proyecto puedes adjuntar archivos de partida —un boceto, un pliego, una hoja de datos— junto al nombre y la descripción. Tocarlos los abre en un visor local **antes de subirlos**: el proyecto todavía no existe, así que se leen del propio archivo con la API del navegador, con las mismas clases que el visor de verdad.
+
+Al pulsar Crear pasan tres cosas en este orden, porque no hay otro posible: se crea el proyecto, se suben los archivos —que necesitan que exista— y solo entonces arranca la sesión inicial, ya sabiendo de ellos. Ese último paso es `POST /api/projects/:id/kickoff`; `POST /api/projects` acepta `deferKickoff` para no arrancar antes de tiempo. Sin adjuntos el comportamiento es el de siempre, en una sola llamada.
+
+Las rutas que llegan en `attachments` acaban dentro de un prompt, así que solo pasan las que **existen de verdad dentro del proyecto**. El prompt inicial queda así:
+
+```
+Proyecto nuevo: "Reservas de canchas".
+
+Descripción del dueño:
+Quiero una app de reservas.
+
+Archivo que subió el dueño:
+- subidas/boceto.md
+
+Aparte de ese archivo la carpeta está vacía. Antes de escribir código:
+1. Lee el archivo de arriba y dime qué encontraste.
+2. Dime en 3-4 líneas qué vas a construir y con qué stack, y por qué.
+3. Lista los primeros 3-5 pasos concretos.
+
+No ejecutes nada todavía: espera mi confirmación.
+```
+
+Con adjuntos ya no hace falta descripción: unos archivos sueltos también son un encargo.
+
+### Dictado por voz
+
+El micro del composer transcribe con la API del navegador y añade cada frase a lo que ya lleves escrito. El audio **no pasa por Claude Remote ni por el modelo**: lo transcribe el propio navegador, así que no cuesta tokens. A cambio no está en todas partes —Firefox no lo trae—, y donde no está el botón simplemente no aparece.
 
 La descarga desde internet corre en tu máquina y detrás de tu router, así que valida el destino: solo http/https, se resuelve el DNS y se rechaza cualquier IP privada o de loopback — también en cada redirección —, con tope de 50 MB y 60 s. Los bytes servidos van con `Content-Security-Policy` restrictivo y `nosniff` para que un HTML del proyecto no se ejecute en el mismo origen que la app.
 

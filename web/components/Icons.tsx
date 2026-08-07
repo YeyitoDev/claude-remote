@@ -35,6 +35,13 @@ export const IconPaperclip = ({ size = 19 }: Props) => (
   </svg>
 )
 
+export const IconMic = ({ size = 19 }: Props) => (
+  <svg {...base(size)}>
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M5 11a7 7 0 0014 0M12 18v3" />
+  </svg>
+)
+
 export const IconSettings = ({ size = 19 }: Props) => (
   <svg {...base(size)}>
     <circle cx="12" cy="12" r="3.2" />

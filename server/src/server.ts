@@ -11,7 +11,7 @@ import { fetchIntoProject, readFileView, resolveForStream, saveUpload } from './
 import { addManualEntry, readKnowledge } from './knowledge.js'
 import { defaultLinkHint, Links } from './links.js'
 import { SessionManager } from './manager.js'
-import { readTree } from './projects.js'
+import { assertInsideProject, readTree } from './projects.js'
 import type { Project, ProjectView, StoredEvent, User, UserView } from './types.js'
 
 declare global {
@@ -118,6 +118,10 @@ export function buildServer(manager: SessionManager) {
     wrap(async (req, res) => {
       const project = projects.create(req.user, req.body ?? {})
 
+      // Con adjuntos el arranque se pide aparte: hay que subirlos antes, y para
+      // subirlos el proyecto ya tiene que existir. Ver `/kickoff`.
+      const defer = req.body?.deferKickoff === true
+
       // Un proyecto recién creado con una carpeta vacía no sirve de nada: se
       // abre la primera sesión y, si hay descripción, se arranca sola con un
       // prompt derivado de ella. Si algo falla, el proyecto se conserva igual.
@@ -125,7 +129,7 @@ export function buildServer(manager: SessionManager) {
       try {
         const created = manager.create(req.user, project, { title: 'Arranque' })
         session = created.toView()
-        const kickoff = buildKickoff(project)
+        const kickoff = defer ? null : buildKickoff(project)
         if (kickoff) {
           await manager.send(created, req.user, kickoff)
           session = created.toView()
@@ -136,6 +140,29 @@ export function buildServer(manager: SessionManager) {
 
       manager.emit('projects')
       res.status(201).json({ project: projectView(project), session })
+    }),
+  )
+
+  /**
+   * Arranca la sesión inicial de un proyecto creado con `deferKickoff`.
+   *
+   * Existe porque adjuntar archivos al prompt inicial son tres pasos en este
+   * orden: crear el proyecto, subir los archivos —que necesitan que exista— y
+   * recién entonces hablarle al agente de ellos.
+   */
+  app.post(
+    '/api/projects/:id/kickoff',
+    wrap(async (req, res) => {
+      const project = projects.require(req.params.id, req.user)
+      const attachments = normalizeAttachments(project, req.body?.attachments)
+
+      const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : null
+      const session = sessionId ? manager.require(sessionId, req.user) : manager.forProject(project.id)[0]
+      if (!session) throw new HttpError(404, 'El proyecto no tiene ninguna sesión que arrancar.')
+
+      const kickoff = buildKickoff(project, attachments)
+      if (kickoff) await manager.send(session, req.user, kickoff)
+      res.json({ session: session.toView() })
     }),
   )
 
@@ -531,21 +558,58 @@ export function buildServer(manager: SessionManager) {
  * nada: empezar a escribir código desde una descripción de dos frases produce
  * casi siempre lo que no era.
  */
-function buildKickoff(project: Project): string | null {
+function buildKickoff(project: Project, attachments: string[] = []): string | null {
   const description = project.description.trim()
-  if (!description) return null
-  return [
-    `Proyecto nuevo: "${project.name}".`,
-    '',
-    'Descripción del dueño:',
-    description,
-    '',
-    'La carpeta está prácticamente vacía. Antes de escribir código:',
-    '1. Dime en 3-4 líneas qué vas a construir y con qué stack, y por qué.',
-    '2. Lista los primeros 3-5 pasos concretos.',
+  // Unos archivos sin una línea de contexto ya son un encargo: basta con
+  // cualquiera de las dos cosas para que valga la pena arrancar.
+  if (!description && !attachments.length) return null
+
+  const lines = [`Proyecto nuevo: "${project.name}".`, '']
+  if (description) lines.push('Descripción del dueño:', description, '')
+  if (attachments.length) {
+    lines.push(
+      attachments.length === 1 ? 'Archivo que subió el dueño:' : 'Archivos que subió el dueño:',
+      ...attachments.map((path) => `- ${path}`),
+      '',
+    )
+  }
+
+  const one = attachments.length === 1
+  const steps = [
+    'Dime en 3-4 líneas qué vas a construir y con qué stack, y por qué.',
+    'Lista los primeros 3-5 pasos concretos.',
+  ]
+  if (attachments.length) {
+    steps.unshift(one ? 'Lee el archivo de arriba y dime qué encontraste.' : 'Lee los archivos de arriba y dime qué encontraste.')
+  }
+
+  lines.push(
+    attachments.length
+      ? `Aparte de ${one ? 'ese archivo' : 'esos archivos'} la carpeta está vacía. Antes de escribir código:`
+      : 'La carpeta está prácticamente vacía. Antes de escribir código:',
+    ...steps.map((step, i) => `${i + 1}. ${step}`),
     '',
     'No ejecutes nada todavía: espera mi confirmación.',
-  ].join('\n')
+  )
+  return lines.join('\n')
+}
+
+/**
+ * Las rutas de adjuntos llegan del cliente y acaban dentro de un prompt: solo
+ * pasan las que existen de verdad dentro de la carpeta del proyecto.
+ */
+function normalizeAttachments(project: Project, raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((path): path is string => typeof path === 'string' && path.trim() !== '')
+    .slice(0, 20)
+    .filter((path) => {
+      try {
+        return existsSync(assertInsideProject(project, path))
+      } catch {
+        return false
+      }
+    })
 }
 
 /** ¿Es la petición cuyo cuerpo es un archivo y no debe tocar el parser de JSON? */

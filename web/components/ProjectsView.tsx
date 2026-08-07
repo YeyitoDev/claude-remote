@@ -1,20 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { formatCost, relativeTime } from '@/lib/items'
 import { modelLabel } from '@/lib/models'
 import { useStore } from '@/lib/store'
 import type { ProjectView, SessionView } from '@/lib/types'
 import { AccountSheet } from './AccountSheet'
-import { IconChat, IconGrid, IconList, IconPlus, IconUser, IconUsers } from './Icons'
+import { LocalFileViewer } from './FileViewer'
+import { IconChat, IconClose, IconGrid, IconList, IconPaperclip, IconPlus, IconUser, IconUsers } from './Icons'
 import { Sheet } from './Sheet'
 
 type Mode = 'cards' | 'list'
 const MODE_KEY = 'claude-remote.projects.mode'
 
 export function ProjectsView() {
-  const { projects, me, go, openSession, refresh, conn, defaults } = useStore()
+  const { projects, me, go, openSession, refresh, defaults } = useStore()
   const [mode, setMode] = useState<Mode>(
     () => ((typeof window !== 'undefined' && localStorage.getItem(MODE_KEY)) as Mode) || 'cards',
   )
@@ -112,10 +113,6 @@ export function ProjectsView() {
             if (session) openSession(session.id)
             else go({ name: 'project', projectId: project.id })
           }}
-          create={async (body) => {
-            if (!conn) throw new Error('Sin conexión')
-            return api.createProject(conn, body)
-          }}
         />
       )}
     </div>
@@ -162,35 +159,80 @@ function ProjectRow({ project, onOpen }: { project: ProjectView; onOpen: () => v
   )
 }
 
+/** Un archivo elegido para el arranque, que todavía no se ha subido. */
+type Staged = { key: string; file: File }
+
 function NewProjectSheet({
   onClose,
   onCreated,
-  create,
 }: {
   onClose: () => void
   onCreated: (result: { project: ProjectView; session: SessionView | null }) => void
-  create: (body: { name: string; description?: string }) => Promise<{
-    project: ProjectView
-    session: SessionView | null
-  }>
 }) {
+  const { conn } = useStore()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [staged, setStaged] = useState<Staged[]>([])
+  const [preview, setPreview] = useState<File | null>(null)
+  const [step, setStep] = useState<null | 'creating' | 'uploading' | 'starting'>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const seq = useRef(0)
 
+  const busy = step !== null
+
+  /**
+   * Crear, subir y arrancar, en ese orden: los archivos necesitan que el
+   * proyecto exista, y el agente no debe leer el encargo hasta que estén.
+   */
   const submit = async () => {
     if (!name.trim()) return setFailure('Ponle un nombre.')
-    setBusy(true)
+    if (!conn) return setFailure('Sin conexión.')
     setFailure(null)
+    setStep('creating')
     try {
-      onCreated(await create({ name: name.trim(), description: description.trim() }))
+      const created = await api.createProject(conn, {
+        name: name.trim(),
+        description: description.trim(),
+        deferKickoff: staged.length > 0,
+      })
+
+      if (!staged.length) return onCreated(created)
+
+      setStep('uploading')
+      const paths: string[] = []
+      const failed: string[] = []
+      for (const { file } of staged) {
+        try {
+          paths.push((await api.uploadFile(conn, created.project.id, file)).path)
+        } catch {
+          failed.push(file.name)
+        }
+      }
+
+      // El proyecto ya existe: si una subida falló, se avisa pero se arranca
+      // igual con lo que sí llegó — deshacerlo sería peor.
+      setStep('starting')
+      const { session } = await api.kickoff(conn, created.project.id, {
+        sessionId: created.session?.id,
+        attachments: paths,
+      })
+      if (failed.length) console.warn('[proyecto] no se subieron:', failed.join(', '))
+      onCreated({ project: created.project, session })
     } catch (err: any) {
       setFailure(err?.message ?? 'No se pudo crear.')
-    } finally {
-      setBusy(false)
+      setStep(null)
     }
   }
+
+  const label =
+    step === 'creating'
+      ? 'Creando…'
+      : step === 'uploading'
+        ? 'Subiendo archivos…'
+        : step === 'starting'
+          ? 'Arrancando la sesión…'
+          : 'Crear proyecto'
 
   return (
     <Sheet title="Nuevo proyecto" onClose={onClose}>
@@ -214,11 +256,56 @@ function NewProjectSheet({
         </span>
       </div>
 
+      <div className="field">
+        <label>Archivos de partida</label>
+        {staged.length > 0 && (
+          <div className="attachments">
+            {staged.map(({ key, file }) => (
+              <span key={key} className="attachment ready">
+                <button className="attachment-name" onClick={() => setPreview(file)} aria-label={`Ver ${file.name}`}>
+                  {file.name}
+                </button>
+                <button
+                  className="attachment-drop"
+                  onClick={() => setStaged((prev) => prev.filter((s) => s.key !== key))}
+                  aria-label={`Quitar ${file.name}`}
+                  disabled={busy}
+                >
+                  <IconClose size={13} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            const chosen = Array.from(e.target.files ?? [])
+            setStaged((prev) => [...prev, ...chosen.map((file) => ({ key: `s${seq.current++}`, file }))])
+            e.target.value = ''
+          }}
+        />
+        <button className="btn ghost block" onClick={() => fileRef.current?.click()} disabled={busy}>
+          <span className="row-center">
+            <IconPaperclip size={16} /> Adjuntar archivos
+          </span>
+        </button>
+        <span className="field-hint">
+          Un boceto, un pliego, una hoja de datos. Se suben a <code className="inline-code">subidas/</code> al
+          crear el proyecto y la primera sesión arranca leyéndolos. Tócalos para verlos antes.
+        </span>
+      </div>
+
       {failure && <div className="notice error">{failure}</div>}
 
       <button className="btn primary block" onClick={() => void submit()} disabled={busy}>
-        {busy ? 'Creando…' : 'Crear proyecto'}
+        {label}
       </button>
+
+      {preview && <LocalFileViewer file={preview} onClose={() => setPreview(null)} />}
     </Sheet>
   )
 }

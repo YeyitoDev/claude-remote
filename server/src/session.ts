@@ -167,13 +167,25 @@ export class ClaudeSession {
 
   async setPermissionMode(mode: SessionMeta['permissionMode']) {
     const previous = this.meta.permissionMode
+    if (mode === previous) return
     this.meta.permissionMode = mode
     this.touchMeta()
+
     if (this.handle) {
-      try {
-        await this.handle.setPermissionMode(mode)
-      } catch (err) {
-        this.emit({ kind: 'error', message: `No se pudo cambiar el modo de permisos: ${errText(err)}` })
+      // El CLI decide `bypassPermissions` al arrancar y rechaza entrar o salir
+      // de ese modo en caliente ("la sesión no se creó con ese modo"). Se
+      // reinicia el proceso: reanuda por `resume`, así que la conversación
+      // sigue intacta y el modo sí queda aplicado de verdad.
+      if (mode === 'bypassPermissions' || previous === 'bypassPermissions') {
+        await this.restartWithCurrentMode()
+      } else {
+        try {
+          await this.handle.setPermissionMode(mode)
+        } catch {
+          // Si el CLI lo rechaza igual, reiniciar es preferible a dejar la
+          // sesión diciendo un modo y comportándose como otro.
+          await this.restartWithCurrentMode()
+        }
       }
     }
     // Planificar y ejecutar pueden querer modelos distintos: se cambia al
@@ -189,6 +201,26 @@ export class ClaudeSession {
           this.emit({ kind: 'error', message: `No se pudo cambiar el modelo: ${errText(err)}` })
         }
       }
+    }
+  }
+
+  /**
+   * Recrea el proceso para que arranque con el modo que ya está en `meta`.
+   *
+   * Es el mismo ciclo de hibernar y despertar que se usa al liberar capacidad,
+   * así que la conversación se reanuda con `resume` y no se pierde nada.
+   */
+  private async restartWithCurrentMode() {
+    const mode = this.meta.permissionMode
+    try {
+      await this.hibernate()
+      await this.wake()
+      this.emit({
+        kind: 'notice',
+        text: `Modo de permisos "${mode}": la sesión se reinició para aplicarlo. La conversación sigue.`,
+      })
+    } catch (err) {
+      this.emit({ kind: 'error', message: `No se pudo aplicar el modo ${mode}: ${errText(err)}` })
     }
   }
 
