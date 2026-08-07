@@ -159,8 +159,8 @@ export const api = {
   ) => request<{ session: SessionView }>(c, `/api/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteSession: (c: Connection, id: string) =>
     request<{ ok: true }>(c, `/api/sessions/${id}`, { method: 'DELETE' }),
-  sendMessage: (c: Connection, id: string, text: string) =>
-    request<{ ok: true }>(c, `/api/sessions/${id}/messages`, post({ text })),
+  sendMessage: (c: Connection, id: string, text: string, attachments?: string[]) =>
+    request<{ ok: true }>(c, `/api/sessions/${id}/messages`, post({ text, attachments })),
   wake: (c: Connection, id: string) =>
     request<{ session: SessionView }>(c, `/api/sessions/${id}/wake`, post()),
   hibernate: (c: Connection, id: string) =>

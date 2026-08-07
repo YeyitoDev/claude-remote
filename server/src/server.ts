@@ -160,6 +160,9 @@ export function buildServer(manager: SessionManager) {
       const session = sessionId ? manager.require(sessionId, req.user) : manager.forProject(project.id)[0]
       if (!session) throw new HttpError(404, 'El proyecto no tiene ninguna sesión que arrancar.')
 
+      // El prompt de arranque ya nombra los archivos, así que se registran
+      // aparte en vez de pasarlos a `send`: si no, saldrían nombrados dos veces.
+      session.noteAttachments(attachments)
       const kickoff = buildKickoff(project, attachments)
       if (kickoff) await manager.send(session, req.user, kickoff)
       res.json({ session: session.toView() })
@@ -351,8 +354,11 @@ export function buildServer(manager: SessionManager) {
     wrap(async (req, res) => {
       const session = manager.require(req.params.id, req.user)
       const text = typeof req.body?.text === 'string' ? req.body.text : ''
-      if (!text.trim()) throw new HttpError(400, 'El mensaje está vacío.')
-      await manager.send(session, req.user, text)
+      const project = projects.get(session.meta.projectId)
+      const attachments = project ? normalizeAttachments(project, req.body?.attachments) : []
+      // Unos archivos sin texto ya son un mensaje.
+      if (!text.trim() && !attachments.length) throw new HttpError(400, 'El mensaje está vacío.')
+      await manager.send(session, req.user, text, attachments)
       res.json({ ok: true, session: session.toView() })
     }),
   )

@@ -137,13 +137,9 @@ export function Composer({ session }: { session: SessionView }) {
     const value = text.trim()
     if ((!value && !ready.length) || busy || uploading) return
 
-    // El agente no ve el adjunto: ve la ruta. Se le nombran los archivos
-    // explícitamente para que sepa que están ahí y pueda abrirlos.
-    const header = ready.length
-      ? `${ready.length === 1 ? 'Archivo que acabo de subir' : 'Archivos que acabo de subir'} al proyecto:\n` +
-        ready.map((a) => `- ${a.path}`).join('\n')
-      : ''
-    const message = [header, value].filter(Boolean).join('\n\n')
+    // Las rutas van aparte del texto: el servidor las registra como archivos
+    // de entrada de la sesión y compone el prompt con ellas.
+    const paths = ready.map((a) => a.path!).filter(Boolean)
 
     const previous = attachments
     setBusy(true)
@@ -151,7 +147,7 @@ export function Composer({ session }: { session: SessionView }) {
     setText('')
     setAttachments([])
     try {
-      await send(session.id, message)
+      await send(session.id, value, paths)
     } catch (err: any) {
       setFailure(err?.message ?? 'No se pudo enviar.')
       setText(value)

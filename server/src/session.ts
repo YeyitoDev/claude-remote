@@ -141,14 +141,35 @@ export class ClaudeSession {
     return this.handle !== null
   }
 
-  async send(text: string) {
-    this.emit({ kind: 'user', text })
+  /**
+   * Deja constancia de archivos de entrada sin enviar nada.
+   *
+   * Lo usa el arranque de un proyecto, donde el prompt ya viene compuesto y
+   * solo falta que el panel lateral sepa que esos archivos los puso el usuario.
+   */
+  noteAttachments(paths: string[]) {
+    if (paths.length) this.emit({ kind: 'attachment', paths })
+  }
+
+  async send(text: string, attachments: string[] = []) {
+    this.noteAttachments(attachments)
+    // El agente no recibe los bytes: recibe la ruta. Se le nombran delante del
+    // mensaje para que sepa que están ahí y pueda abrirlos.
+    const prompt = attachments.length
+      ? [
+          attachments.length === 1 ? 'Archivo que acabo de subir al proyecto:' : 'Archivos que acabo de subir al proyecto:',
+          ...attachments.map((path) => `- ${path}`),
+          ...(text.trim() ? ['', text] : []),
+        ].join('\n')
+      : text
+
+    this.emit({ kind: 'user', text: prompt })
     this.meta.lastMessageAt = Date.now()
     this.touchMeta()
     if (!this.isLive) await this.wake()
     this.queue?.push({
       type: 'user',
-      message: { role: 'user', content: text },
+      message: { role: 'user', content: prompt },
       parent_tool_use_id: null,
       session_id: this.meta.sdkSessionId ?? undefined,
     })

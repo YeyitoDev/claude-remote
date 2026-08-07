@@ -209,10 +209,10 @@ export class SessionManager extends EventEmitter {
     await session.wake()
   }
 
-  async send(session: ClaudeSession, user: User, text: string) {
+  async send(session: ClaudeSession, user: User, text: string, attachments: string[] = []) {
     this.usage.assertWithinBudget(user)
     if (!session.isLive) await this.wake(session, user)
-    await session.send(text)
+    await session.send(text, attachments)
   }
 
   async remove(id: string) {

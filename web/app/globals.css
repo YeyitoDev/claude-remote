@@ -1963,6 +1963,12 @@ select:focus {
   color: var(--accent);
 }
 
+/* Lo que puso el usuario, no el agente: se distingue de un vistazo. */
+.chip.subido {
+  background: color-mix(in srgb, var(--amber) 22%, transparent);
+  color: var(--amber);
+}
+
 /* preguntas pasadas */
 
 .question {

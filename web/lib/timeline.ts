@@ -13,7 +13,7 @@ export type TouchedFile = {
   /** Ruta relativa al cwd de la sesión cuando se puede; si no, la absoluta. */
   path: string
   name: string
-  action: 'creado' | 'editado' | 'leído'
+  action: 'subido' | 'creado' | 'editado' | 'leído'
   /** Última vez que la sesión lo tocó. */
   seq: number
   ts: number
@@ -23,14 +23,32 @@ export type TouchedFile = {
 
 /**
  * Archivos que ha tocado la sesión, derivados del propio log de eventos.
- * No hace falta que el servidor los registre aparte: `tool_use` ya lo dice, y
- * el `tool_result` correspondiente indica si la operación falló.
+ * Para lo que hace el agente basta con `tool_use`, y el `tool_result`
+ * correspondiente indica si la operación falló. Lo que sube el usuario no pasa
+ * por ninguna herramienta, así que va en su propio evento.
  */
 export function touchedFiles(events: StoredEvent[], cwd: string): TouchedFile[] {
   const byPath = new Map<string, TouchedFile>()
   const pendingByToolUse = new Map<string, string>()
 
   for (const event of events) {
+    if (event.kind === 'attachment') {
+      for (const raw of event.paths) {
+        const path = relativize(raw, cwd)
+        const existing = byPath.get(path)
+        byPath.set(path, {
+          path,
+          name: path.split('/').pop() ?? path,
+          action: 'subido',
+          seq: event.seq,
+          ts: event.ts,
+          times: (existing?.times ?? 0) + 1,
+          failed: false,
+        })
+      }
+      continue
+    }
+
     if (event.kind === 'tool_use') {
       const action = FILE_TOOLS[event.name]
       if (!action) continue
@@ -67,7 +85,11 @@ export function touchedFiles(events: StoredEvent[], cwd: string): TouchedFile[] 
   return [...byPath.values()].sort((a, b) => b.seq - a.seq)
 }
 
-const WEIGHT = { leído: 0, editado: 1, creado: 2 } as const
+/**
+ * `subido` pesa más que todo: que el agente después lo lea o lo edite no
+ * cambia de dónde salió el archivo, y de dónde salió es lo que interesa saber.
+ */
+const WEIGHT = { leído: 0, editado: 1, creado: 2, subido: 3 } as const
 
 function strongest(a: TouchedFile['action'], b: TouchedFile['action']): TouchedFile['action'] {
   return WEIGHT[a] >= WEIGHT[b] ? a : b

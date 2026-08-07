@@ -55,7 +55,7 @@ type Store = {
   adoptToken: (token: string) => Promise<void>
 
   openSession: (sessionId: string) => void
-  send: (id: string, text: string) => Promise<void>
+  send: (id: string, text: string, attachments?: string[]) => Promise<void>
   interrupt: (id: string) => Promise<void>
   respond: (id: string, permissionId: string, decision: 'allow' | 'allow_always' | 'deny') => Promise<void>
   createSession: (
@@ -317,8 +317,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         await connect({ url: guard().url, token })
       },
       openSession,
-      async send(id, text) {
-        await api.sendMessage(guard(), id, text)
+      async send(id, text, attachments) {
+        await api.sendMessage(guard(), id, text, attachments)
       },
       async interrupt(id) {
         await api.interrupt(guard(), id)

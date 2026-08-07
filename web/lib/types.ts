@@ -158,6 +158,8 @@ export type SessionView = {
 export type SessionEvent =
   | { kind: 'status'; status: SessionStatus }
   | { kind: 'user'; text: string }
+  /** Archivos que subió el usuario para ese turno. Los lista el panel lateral. */
+  | { kind: 'attachment'; paths: string[] }
   | { kind: 'assistant'; text: string }
   | { kind: 'delta'; text: string }
   | { kind: 'thinking' }

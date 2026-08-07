@@ -208,7 +208,7 @@ Los del proyecto son los valores de partida. **Dentro de una sesión** puedes ca
 Se abre con el icono de capas en la cabecera. Todo lo que muestra se deriva del log de eventos que el cliente ya tiene, salvo el knowledge, que se pide una vez:
 
 - **Línea** — los turnos de la conversación mezclados con las entradas de knowledge que esa misma conversación generó, agrupados por día. Tocar un turno salta a ese punto del chat y lo resalta.
-- **Archivos** — lo que la sesión creó, editó o leyó, con etiqueta por acción. Tocar abre el visor en vivo.
+- **Archivos** — lo que la sesión creó, editó o leyó **y lo que subiste tú**, con etiqueta por acción. Tocar abre el visor en vivo. Lo subido se marca `subido` y se queda así aunque el agente lo lea o lo edite después: de dónde salió el archivo pesa más que lo que se haga luego con él.
 - **Preguntas** — tus mensajes en orden inverso, para volver a cualquier punto de una conversación larga.
 - **Sesiones** — las del proyecto, con estado y coste, y un botón para abrir otra en paralelo eligiendo modelo y permisos sin salir de la actual. Cada fila lleva papelera con confirmación; si borras la que tienes abierta, el panel se cierra y vuelves al proyecto.
 
@@ -244,6 +244,8 @@ Tres barreras, en este orden, **antes** de consultar al modelo:
 El clip del composer abre el selector del sistema — en el celular, eso incluye la cámara y el carrete. En escritorio también puedes **arrastrar archivos a cualquier punto de la conversación**: el objetivo es toda la pantalla, no un recuadro concreto.
 
 Puedes elegir varios; suben **en cuanto los eliges**, no al enviar, así que un archivo demasiado grande falla mientras todavía estás escribiendo. Cada uno aparece como una etiqueta con su estado (`subiendo…` / `listo` / `falló`), se puede quitar antes de enviar y, una vez subido, **tocar el nombre lo abre en el visor** para comprobar qué mandas.
+
+Las rutas viajan **aparte del texto** (`{"text":"…","attachments":["subidas/…"]}`). El servidor las valida, las registra como archivos de entrada de la sesión —de ahí que aparezcan en el panel lateral— y compone el prompt. De un texto no se puede derivar una lista de archivos, así que el evento va aparte del mensaje.
 
 Al enviar, el mensaje que ve Claude lleva las rutas delante:
 

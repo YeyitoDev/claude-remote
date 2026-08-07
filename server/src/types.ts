@@ -198,6 +198,12 @@ export type PermissionRequestView = {
 export type SessionEvent =
   | { kind: 'status'; status: SessionStatus }
   | { kind: 'user'; text: string }
+  /**
+   * Archivos que subió el usuario para este turno. Va aparte del `user` aunque
+   * el prompt ya lleve las rutas: de un texto no se puede derivar una lista de
+   * archivos, y el panel lateral necesita listarlos como entrada.
+   */
+  | { kind: 'attachment'; paths: string[] }
   | { kind: 'assistant'; text: string }
   | { kind: 'delta'; text: string }
   | { kind: 'thinking' }
