@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { formatCost, relativeTime, statusLabel } from '@/lib/items'
 import { MODELS, MODES, modelLabel } from '@/lib/models'
@@ -225,6 +225,8 @@ function FilesPanel({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState<string | null>(null)
   const [fetching, setFetching] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
+  const [uploading, setUploading] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   // Se refresca cuando alguna sesión del proyecto está trabajando: es cuando
   // aparecen archivos nuevos.
@@ -250,9 +252,40 @@ function FilesPanel({ projectId }: { projectId: string }) {
     return () => clearInterval(timer)
   }, [busy, load])
 
+  /** Sube en serie y deja abierto el último, que es el que se acaba de elegir. */
+  const upload = async (files: FileList | null) => {
+    if (!files?.length || !conn) return
+    setFailure(null)
+    let last: string | null = null
+    for (const file of Array.from(files)) {
+      setUploading(file.name)
+      try {
+        last = (await api.uploadFile(conn, projectId, file)).path
+      } catch (err: any) {
+        setFailure(`${file.name}: ${err?.message ?? 'no se pudo subir.'}`)
+      }
+    }
+    setUploading(null)
+    await load()
+    if (last) setOpen(last)
+  }
+
   return (
     <div className="scroll pad">
       <div className="knowledge-actions">
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            void upload(e.target.files)
+            e.target.value = ''
+          }}
+        />
+        <button className="btn ghost" onClick={() => fileRef.current?.click()} disabled={!!uploading}>
+          <span className="row-center">↑ {uploading ? `Subiendo ${uploading}…` : 'Subir archivo'}</span>
+        </button>
         <button className="btn ghost" onClick={() => setFetching(true)}>
           <span className="row-center">↓ Traer de la red</span>
         </button>

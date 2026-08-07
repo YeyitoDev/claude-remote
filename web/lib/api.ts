@@ -112,6 +112,18 @@ export const api = {
     request<{ file: FileView }>(c, `/api/projects/${id}/files?path=${encodeURIComponent(path)}`),
   fetchFromWeb: (c: Connection, id: string, body: { url: string; path?: string }) =>
     request<{ path: string; size: number; mime: string }>(c, `/api/projects/${id}/files/fetch`, post(body)),
+  uploadFile: (c: Connection, id: string, file: File) =>
+    request<{ path: string; size: number; mime: string }>(
+      c,
+      `/api/projects/${id}/files/upload?name=${encodeURIComponent(file.name)}`,
+      {
+        method: 'POST',
+        body: file,
+        // Sin esto el navegador pondría el tipo del archivo, y un `.json`
+        // acabaría en el parser de JSON del servidor en vez de en disco.
+        headers: { 'content-type': 'application/octet-stream' },
+      },
+    ),
   /**
    * Descarga los bytes con el token en la cabecera y devuelve un blob URL.
    * Es lo que permite mostrar PDFs e imágenes sin meter el token en la URL.

@@ -675,6 +675,92 @@ select:focus {
   place-items: center;
 }
 
+/* Clip: mismo círculo que Enviar pero sin peso, para que no compita con él. */
+.attach {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 50%;
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+}
+
+.attach:active {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.attach:disabled {
+  opacity: 0.35;
+}
+
+/* archivos adjuntos al mensaje que se está escribiendo */
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px 8px;
+}
+
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 5px 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.attachment-name {
+  min-width: 0;
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-state {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.attachment.ready {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.attachment.ready .attachment-state {
+  color: var(--accent);
+}
+
+.attachment.failed {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+}
+
+.attachment.failed .attachment-state {
+  color: var(--red);
+}
+
+.attachment-drop {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--text-faint);
+}
+
+.attachment-drop:active {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
 .send:disabled {
   opacity: 0.35;
 }

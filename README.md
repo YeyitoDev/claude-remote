@@ -235,6 +235,31 @@ Tres barreras, en este orden, **antes** de consultar al modelo:
 | **Ver en vivo** | Toca un archivo del árbol. Markdown renderizado, código con resaltado de bloque, imágenes y PDF embebido. Se refresca solo al cambiar el archivo: puedes ver un documento mientras Claude lo escribe. |
 | **Descargar** | Botón ↓ en el visor. Los bytes se piden con el token en la cabecera y se entregan como blob, así que el token nunca viaja en una URL. |
 | **Traer de la red** | Botón «Traer de la red» en Archivos: pega una URL y el servidor la descarga a `descargas/` del proyecto. |
+| **Subir desde el dispositivo** | Clip 📎 en el composer, o «Subir archivo» en Archivos. Aterrizan en `subidas/` del proyecto. |
+
+### Adjuntar archivos a un mensaje
+
+El clip del composer abre el selector del sistema — en el celular, eso incluye la cámara y el carrete. Puedes elegir varios; suben **en cuanto los eliges**, no al enviar, así que un archivo demasiado grande falla mientras todavía estás escribiendo. Cada uno aparece como una etiqueta con su estado (`subiendo…` / `listo` / `falló`) y se puede quitar antes de enviar.
+
+Al enviar, el mensaje que ve Claude lleva las rutas delante:
+
+```
+Archivos que acabo de subir al proyecto:
+- subidas/factura.pdf
+- subidas/IMG_0042.jpg
+
+¿me resumes la factura y me dices si cuadra con la foto?
+```
+
+El agente no recibe los bytes: recibe la ruta y los abre con sus herramientas, dentro del confinamiento del proyecto como cualquier otro archivo.
+
+Detalles que importan:
+
+- **Uno por petición**, con el cuerpo crudo y el nombre en la query. Sin `multipart`: no aportaba nada para un archivo suelto y sí una dependencia más. Cada archivo tiene su propio progreso y su propio error, que es lo que hace falta cuando subes cuatro fotos y falla una.
+- **Se escribe a disco según llega**, no en memoria, y el tope de 50 MB se aplica a los bytes que de verdad llegan (el `Content-Length` puede mentir). Una subida cortada a medias borra el parcial en vez de dejar un archivo truncado que el agente confunda con bueno.
+- **El nombre se sanea**: se queda solo el nombre base, sin rutas ni dotfiles ni caracteres de control, así que `../../../evil.txt` acaba como `subidas/evil.txt`. `assertInsideProject` es la segunda red.
+- **No se pisa nada**: si el nombre ya existe se guarda como `nota-2.txt`. Dos `IMG_0001.jpg` del carrete son dos archivos.
+- El cuerpo de la subida **no pasa por el parser de JSON**, que si no se comería un `.json` entero y lo rechazaría por el tope de 2 MB.
 
 La descarga desde internet corre en tu máquina y detrás de tu router, así que valida el destino: solo http/https, se resuelve el DNS y se rechaza cualquier IP privada o de loopback — también en cada redirección —, con tope de 50 MB y 60 s. Los bytes servidos van con `Content-Security-Policy` restrictivo y `nosniff` para que un HTML del proyecto no se ejecute en el mismo origen que la app.
 
@@ -389,6 +414,7 @@ Todo bajo `/api` pide `Authorization: Bearer <token>`. `GET /api/health` es púb
 | `GET` | `/api/projects/:id/files?path=` | Metadata + contenido si es texto |
 | `GET` | `/api/projects/:id/files/raw?path=&download=1` | Bytes del archivo |
 | `POST` | `/api/projects/:id/files/fetch` | `{"url":"…","path":"…"}` — trae un documento de internet |
+| `POST` | `/api/projects/:id/files/upload?name=` | Sube un archivo a `subidas/`. El cuerpo es el archivo crudo, tope 50 MB |
 | `POST` | `/api/projects/:id/sessions` | Crear sesión en el proyecto |
 | `PATCH` `DELETE` | `/api/sessions/:id` | Renombrar, cambiar modelo o permisos / borrar sesión e historial |
 | `POST` | `/api/sessions/:id/messages` \| `/interrupt` \| `/wake` \| `/hibernate` | Operar la sesión |

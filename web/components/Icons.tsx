@@ -29,6 +29,12 @@ export const IconStop = ({ size = 16 }: Props) => (
   </svg>
 )
 
+export const IconPaperclip = ({ size = 19 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M21 11.5l-8.6 8.6a5 5 0 01-7-7l8.6-8.6a3.3 3.3 0 114.7 4.7l-8.6 8.6a1.7 1.7 0 01-2.4-2.4l7.9-7.9" />
+  </svg>
+)
+
 export const IconSettings = ({ size = 19 }: Props) => (
   <svg {...base(size)}>
     <circle cx="12" cy="12" r="3.2" />

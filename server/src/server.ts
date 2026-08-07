@@ -7,7 +7,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { WebSocketServer, type WebSocket } from 'ws'
 import { HttpError } from './auth.js'
 import { config } from './config.js'
-import { fetchIntoProject, readFileView, resolveForStream } from './files.js'
+import { fetchIntoProject, readFileView, resolveForStream, saveUpload } from './files.js'
 import { addManualEntry, readKnowledge } from './knowledge.js'
 import { defaultLinkHint, Links } from './links.js'
 import { SessionManager } from './manager.js'
@@ -28,7 +28,12 @@ export function buildServer(manager: SessionManager) {
   const links = new Links()
   const app = express()
   app.use(cors())
-  app.use(express.json({ limit: '2mb' }))
+
+  // El cuerpo de una subida es el archivo tal cual, así que no puede pasar por
+  // el parser de JSON: si el archivo fuese un `.json`, se lo comería entero y
+  // además lo rechazaría por el tope de 2 MB.
+  const parseJson = express.json({ limit: '2mb' })
+  app.use((req, res, next) => (isUpload(req) ? next() : parseJson(req, res, next)))
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, version: 2 }))
 
@@ -207,6 +212,25 @@ export function buildServer(manager: SessionManager) {
       res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'")
       res.setHeader('X-Content-Type-Options', 'nosniff')
       createReadStream(full).pipe(res)
+    }),
+  )
+
+  /**
+   * Sube un archivo desde el dispositivo a `subidas/` del proyecto.
+   *
+   * Uno por petición: el cuerpo es el archivo y el nombre viaja en la query.
+   * Así cada archivo tiene su propio progreso y su propio error, que es lo que
+   * hace falta cuando se adjuntan cuatro fotos desde el móvil y falla una.
+   */
+  app.post(
+    '/api/projects/:id/files/upload',
+    wrap(async (req, res) => {
+      const project = projects.require(req.params.id, req.user)
+      const name = typeof req.query.name === 'string' ? req.query.name : ''
+      if (!name.trim()) throw new HttpError(400, 'Falta el nombre del archivo.')
+      const result = await saveUpload(project, { name, body: req })
+      manager.emit('projects')
+      res.status(201).json(result)
     }),
   )
 
@@ -522,6 +546,11 @@ function buildKickoff(project: Project): string | null {
     '',
     'No ejecutes nada todavía: espera mi confirmación.',
   ].join('\n')
+}
+
+/** ¿Es la petición cuyo cuerpo es un archivo y no debe tocar el parser de JSON? */
+function isUpload(req: Request): boolean {
+  return req.method === 'POST' && req.path.endsWith('/files/upload')
 }
 
 function bearer(req: Request): string | undefined {

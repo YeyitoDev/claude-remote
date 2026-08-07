@@ -1,7 +1,7 @@
 import { createWriteStream, existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { basename, dirname, extname, join } from 'node:path'
-import { Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { HttpError } from './auth.js'
 import { assertInsideProject } from './projects.js'
@@ -11,6 +11,11 @@ import type { FileKind, FileView, Project } from './types.js'
 const MAX_TEXT_BYTES = 400_000
 /** Tope de descarga desde la red. */
 const MAX_FETCH_BYTES = 50 * 1024 * 1024
+/** Tope de subida desde el dispositivo del usuario. */
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+/** Carpeta del proyecto donde aterriza lo que sube el usuario. */
+export const UPLOAD_DIR = 'subidas'
 
 const MIME: Record<string, string> = {
   '.md': 'text/markdown',
@@ -95,6 +100,82 @@ export function resolveForStream(project: Project, relPath: string): { full: str
   const stat = statSync(full)
   if (stat.isDirectory()) throw new HttpError(400, 'Eso es una carpeta.')
   return { full, mime: mimeFor(full), size: stat.size }
+}
+
+// ------------------------------------------------------------- subir archivo
+
+/**
+ * Guarda en el proyecto un archivo que llega en el cuerpo de la petición.
+ *
+ * El cuerpo es el archivo tal cual, sin `multipart`: se sube de uno en uno, así
+ * que envolverlo no aportaba nada y sí una dependencia más. Se escribe a disco
+ * según llega en vez de acumularlo en memoria — el servidor corre en el Mac del
+ * usuario y una foto de 40 MB no debería reservarse entera solo para copiarla.
+ */
+export async function saveUpload(
+  project: Project,
+  input: { name: string; body: Readable },
+): Promise<{ path: string; size: number; mime: string }> {
+  const relPath = uniquePath(project, safeUploadPath(input.name))
+  const full = assertInsideProject(project, relPath)
+  mkdirSync(dirname(full), { recursive: true })
+
+  // El Content-Length puede mentir o faltar: el tope se aplica a lo que llega.
+  let written = 0
+  const counter = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      written += chunk.byteLength
+      if (written > MAX_UPLOAD_BYTES) return cb(new HttpError(413, 'El archivo supera los 50 MB.'))
+      cb(null, chunk)
+    },
+  })
+
+  try {
+    await pipeline(input.body, counter, createWriteStream(full))
+  } catch (err) {
+    // Una subida cortada a medias no debe dejar un archivo truncado que el
+    // agente confunda con bueno.
+    if (existsSync(full)) unlinkSync(full)
+    throw err
+  }
+
+  if (written === 0) {
+    unlinkSync(full)
+    throw new HttpError(400, 'El archivo llegó vacío.')
+  }
+
+  return { path: relPath, size: written, mime: mimeFor(full) }
+}
+
+/** Destino seguro dentro de `subidas/`: sin rutas, sin dotfiles, sin control. */
+function safeUploadPath(requested: string): string {
+  let name = basename(requested.trim())
+    .replace(/[/\\]/g, '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/^\.+/, '')
+    .trim()
+  if (!name) name = 'archivo'
+  if (name.length > 120) {
+    const ext = extname(name).slice(0, 12)
+    name = name.slice(0, 120 - ext.length) + ext
+  }
+  return join(UPLOAD_DIR, name)
+}
+
+/**
+ * Evita pisar lo ya subido. Sin esto, dos fotos del carrete con el mismo
+ * `IMG_0001.jpg` se sobrescribirían la una a la otra sin avisar.
+ */
+function uniquePath(project: Project, relPath: string): string {
+  const ext = extname(relPath)
+  const stem = relPath.slice(0, relPath.length - ext.length)
+  let candidate = relPath
+  for (let n = 2; existsSync(assertInsideProject(project, candidate)); n++) {
+    if (n > 999) throw new HttpError(409, 'Ya hay demasiados archivos con ese nombre.')
+    candidate = `${stem}-${n}${ext}`
+  }
+  return candidate
 }
 
 // ------------------------------------------------------- traer desde la red
