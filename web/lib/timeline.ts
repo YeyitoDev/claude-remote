@@ -95,7 +95,8 @@ function strongest(a: TouchedFile['action'], b: TouchedFile['action']): TouchedF
   return WEIGHT[a] >= WEIGHT[b] ? a : b
 }
 
-function relativize(path: string, cwd: string): string {
+/** Deja la ruta relativa al cwd cuando cae dentro; si no, la devuelve tal cual. */
+export function relativize(path: string, cwd: string): string {
   if (!cwd) return path
   const prefix = cwd.endsWith('/') ? cwd : `${cwd}/`
   return path.startsWith(prefix) ? path.slice(prefix.length) : path

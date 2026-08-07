@@ -2007,6 +2007,160 @@ select:focus {
   margin-top: 2px;
 }
 
+/* entradas y salidas */
+
+/* Flecha en vez de palabra: cabe en la cabecera de una tarjeta sin robarle
+   sitio al nombre de la herramienta, que es lo que se lee primero. */
+.flow-tag {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.flow-tag.salida {
+  background: color-mix(in srgb, var(--green) 22%, transparent);
+  color: var(--green);
+}
+
+.flow-tag.entrada {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.flow-tag.consulta,
+.flow-tag.proyecto {
+  background: var(--surface-2);
+  color: var(--text-faint);
+}
+
+.io-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0 4px;
+}
+
+.io-count {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.io-count strong {
+  color: var(--text);
+}
+
+.io-count.salida strong {
+  color: var(--green);
+}
+
+.io-count.entrada strong {
+  color: var(--accent);
+}
+
+.io-count.zero {
+  opacity: 0.5;
+}
+
+.file-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.file-group-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 6px;
+  font-size: 12.5px;
+}
+
+.file-group-hint {
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* archivos abiertos desde el chat */
+
+.tool-open {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 11px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--accent);
+  text-align: left;
+}
+
+.turn-end {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.produced {
+  align-self: stretch;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--green) 35%, var(--border));
+  background: color-mix(in srgb, var(--green) 7%, transparent);
+}
+
+.produced-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--green);
+  margin-bottom: 6px;
+}
+
+.produced-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.produced-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.produced-file span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.produced-file:active {
+  border-color: var(--green);
+}
+
 .file-jump:disabled {
   opacity: 0.75;
 }

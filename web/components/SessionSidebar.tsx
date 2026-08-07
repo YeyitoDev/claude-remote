@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '@/lib/api'
-import { FILTERS, loadFilter, matches, saveFilter, type FileFilter } from '@/lib/filetypes'
+import {
+  FILTERS,
+  FLOW_HINT,
+  FLOW_LABEL,
+  flowOf,
+  loadFilter,
+  matches,
+  saveFilter,
+  type FileFilter,
+  type FileFlow,
+} from '@/lib/filetypes'
 import { formatBytes, formatCost, formatDuration, relativeTime, statusLabel } from '@/lib/items'
 import { Markdown } from '@/lib/markdown'
 import { MODELS, modeLabel, modelLabel } from '@/lib/models'
@@ -288,7 +298,9 @@ function FilesTab({
     }
   }, [conn, session.projectId, working])
 
-  const rows = useMemo<FileRow[]>(() => {
+  // El flujo se calcula al final, cuando ya se cruzaron log y árbol: antes no
+  // se sabe el `mtime`, que es lo que delata un archivo generado por un script.
+  const rows = useMemo<(FileRow & { flow: FileFlow })[]>(() => {
     const byPath = new Map<string, FileRow>()
     for (const file of files) {
       byPath.set(file.path, {
@@ -323,13 +335,22 @@ function FilesTab({
 
     return [...byPath.values()]
       .filter((row) => matches(row.name, filter))
+      .map((row) => ({ ...row, flow: flowOf(row.action, row.mtimeMs, session.createdAt, row.path) }))
       .sort((a, b) => {
         // Lo que tocó esta sesión va primero: es de lo que se está hablando.
         if ((a.seq === null) !== (b.seq === null)) return a.seq === null ? 1 : -1
         if (a.seq !== null && b.seq !== null) return b.seq - a.seq
         return (b.mtimeMs ?? 0) - (a.mtimeMs ?? 0)
       })
-  }, [files, tree, filter])
+  }, [files, tree, filter, session.createdAt])
+
+  const groups = useMemo(
+    () =>
+      (['salida', 'entrada', 'consulta', 'proyecto'] as FileFlow[])
+        .map((flow) => ({ flow, rows: rows.filter((r) => r.flow === flow) }))
+        .filter((g) => g.rows.length > 0),
+    [rows],
+  )
 
   return (
     <div className="stack">
@@ -348,6 +369,19 @@ function FilesTab({
         ))}
       </div>
 
+      {rows.length > 0 && (
+        <div className="io-summary">
+          {(['salida', 'entrada', 'consulta'] as FileFlow[]).map((flow) => {
+            const n = rows.filter((r) => r.flow === flow).length
+            return (
+              <span key={flow} className={`io-count ${flow}${n ? '' : ' zero'}`}>
+                <strong>{n}</strong> {FLOW_LABEL[flow].toLowerCase()}
+              </span>
+            )
+          })}
+        </div>
+      )}
+
       {!rows.length ? (
         <p className="field-hint">
           {filter === 'todos'
@@ -355,38 +389,66 @@ function FilesTab({
             : 'No hay archivos de ese tipo. Prueba con «Todos».'}
         </p>
       ) : (
-        rows.map((file) => {
-          // Una ruta que sigue siendo absoluta quedó fuera del proyecto: el
-          // visor no puede abrirla, así que no se ofrece como si pudiera.
-          const openable = !file.path.startsWith('/')
-          const meta = [
-            file.size !== undefined ? formatBytes(file.size) : null,
-            file.mtimeMs !== undefined ? relativeTime(file.mtimeMs) : null,
-            file.times > 1 ? `${file.times} veces` : null,
-          ].filter(Boolean)
-
-          return (
-            <div key={file.path} className={`file-row${file.failed ? ' failed' : ''}`}>
-              <button className="file-main" onClick={() => openable && onOpen(file.path)} disabled={!openable}>
-                <IconFile />
-                <span className="file-text">
-                  <span className="file-name">{file.name}</span>
-                  <span className="file-path">{file.path}</span>
-                  {meta.length > 0 && <span className="file-meta">{meta.join(' · ')}</span>}
-                </span>
-              </button>
-              <button
-                className="file-jump"
-                onClick={() => file.seq !== null && onJump(file.seq)}
-                disabled={file.seq === null}
-              >
-                <span className={`chip ${file.action === 'en el proyecto' ? 'proyecto' : file.action}`}>
-                  {file.failed ? (openable ? 'falló' : 'bloqueado') : file.action}
-                </span>
-              </button>
+        groups.map((group) => (
+          <div key={group.flow} className="file-group">
+            <div className="file-group-head">
+              <span className={`flow-tag ${group.flow}`}>
+                {group.flow === 'salida' ? '↑' : group.flow === 'entrada' ? '↓' : '·'}
+              </span>
+              <strong>{FLOW_LABEL[group.flow]}</strong>
+              <span className="file-group-hint">{FLOW_HINT[group.flow]}</span>
             </div>
-          )
-        })
+
+            {group.rows.map((file) => {
+              // Una ruta que sigue siendo absoluta quedó fuera del proyecto: el
+              // visor no puede abrirla, así que no se ofrece como si pudiera.
+              const openable = !file.path.startsWith('/')
+              const meta = [
+                file.size !== undefined ? formatBytes(file.size) : null,
+                file.mtimeMs !== undefined ? relativeTime(file.mtimeMs) : null,
+                file.times > 1 ? `${file.times} veces` : null,
+              ].filter(Boolean)
+
+              // "en el proyecto" solo describe bien al que nadie tocó. Si el
+              // cruce lo situó como salida o entrada, la etiqueta debe decirlo.
+              const label =
+                file.action !== 'en el proyecto'
+                  ? file.action
+                  : file.flow === 'salida'
+                    ? 'generado'
+                    : file.flow === 'entrada'
+                      ? 'subido'
+                      : file.action
+
+              return (
+                <div key={file.path} className={`file-row${file.failed ? ' failed' : ''}`}>
+                  <button
+                    className="file-main"
+                    onClick={() => openable && onOpen(file.path)}
+                    disabled={!openable}
+                  >
+                    <IconFile />
+                    <span className="file-text">
+                      <span className="file-name">{file.name}</span>
+                      <span className="file-path">{file.path}</span>
+                      {meta.length > 0 && <span className="file-meta">{meta.join(' · ')}</span>}
+                    </span>
+                  </button>
+                  <button
+                    className="file-jump"
+                    onClick={() => file.seq !== null && onJump(file.seq)}
+                    disabled={file.seq === null}
+                    aria-label={file.seq !== null ? `Ir a ${file.name} en la conversación` : file.name}
+                  >
+                    <span className={`chip ${label === 'en el proyecto' ? 'proyecto' : label}`}>
+                      {file.failed ? (openable ? 'falló' : 'bloqueado') : label}
+                    </span>
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        ))
       )}
     </div>
   )

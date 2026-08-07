@@ -210,7 +210,22 @@ Se abre con el icono de capas en la cabecera. Todo lo que muestra se deriva del 
 - **Línea** — los turnos de la conversación mezclados con las entradas de knowledge que esa misma conversación generó, agrupados por día. Tocar un turno salta a ese punto del chat y lo resalta.
 - **Archivos** — lo que la sesión creó, editó o leyó, lo que subiste tú **y lo que hay en la carpeta del proyecto**, con etiqueta por origen, tamaño y fecha. Tocar abre el visor en vivo. Lo subido se marca `subido` y se queda así aunque el agente lo lea o lo edite después: de dónde salió el archivo pesa más que lo que se haga luego con él.
 
-  Cruzar el log con el árbol del proyecto no es redundante: **un documento generado por un script sale de un `Bash`, no de un `Write`**, así que con solo los eventos de herramienta no aparecía por ningún lado — justo el archivo que su dueño quería leer. Lo que está en la carpeta pero esta sesión no tocó se marca `en el proyecto`, sin protagonismo.
+  Cruzar el log con el árbol del proyecto no es redundante: **un documento generado por un script sale de un `Bash`, no de un `Write`**, así que con solo los eventos de herramienta no aparecía por ningún lado — justo el archivo que su dueño quería leer.
+
+#### Entradas y salidas
+
+Las filas se agrupan por **de dónde vino el archivo**, con el recuento arriba:
+
+| Grupo | Qué cae ahí |
+|---|---|
+| **Salidas** ↑ | Lo que produjo la sesión: `Write`/`Edit`, **y lo que cambió en la carpeta después de que la sesión empezara** aunque ninguna herramienta lo tocara. Eso último se marca `generado` y es lo que rescata un `.docx` hecho con Python. |
+| **Entradas** ↓ | Lo que subiste. Todo lo que vive en `subidas/` cuenta, aunque no haya evento que lo diga: la carpeta manda sobre la fecha, si no una subida reciente pasaría por salida solo por ser nueva. |
+| **Consultados** | Lo que el agente abrió para leer. |
+| **Resto del proyecto** | Ya estaba ahí. |
+
+La regla de la fecha lleva dos segundos de margen a propósito: el `CLAUDE.md` que se escribe al crear el proyecto nace en el mismo instante que su primera sesión, y contarlo como salida ensucia la lista con algo que nadie pidió.
+
+Sobre el proyecto de tesis real, con el filtro en Documentos, eso reduce 6 archivos a lo que importa: **1 salida** (el `.docx` de la tesis, antes invisible), **4 entradas** (los `.docx` que subió) y **4 consultados**.
 - **Preguntas** — tus mensajes en orden inverso, para volver a cualquier punto de una conversación larga.
 - **Sesiones** — las del proyecto, con estado y coste, y un botón para abrir otra en paralelo eligiendo modelo y permisos sin salir de la actual. Cada fila lleva papelera con confirmación; si borras la que tienes abierta, el panel se cierra y vuelves al proyecto.
 
@@ -219,6 +234,16 @@ Se abre con el icono de capas en la cabecera. Todo lo que muestra se deriva del 
 La papelera está en tres sitios: en la tarjeta de la sesión dentro del proyecto, en las filas del panel lateral y en «Zona peligrosa» de los ajustes de la sesión. Siempre pide confirmación, y avisa aparte si la sesión está trabajando, porque borrarla corta el turno en curso.
 
 Se borra la sesión y su historial de eventos. **Los archivos del proyecto no se tocan**, y las entradas de knowledge que esa sesión ya generó siguen en el proyecto: lo aprendido sobrevive a la conversación.
+
+### Archivos desde el propio chat
+
+No hace falta ir al panel para abrir lo que acaba de salir:
+
+- Cada tarjeta de herramienta lleva **↓ o ↑** según lea o escriba (`Bash` no lleva ninguna: puede hacer cualquier cosa, y etiquetarlo sería mentir).
+- Si la herramienta tocó un archivo del proyecto, aparece **«Ver ‹nombre›»** debajo, que abre el visor sin salir de la conversación.
+- Al cerrar cada turno se lista **lo que ese turno generó**, en fichas pulsables. Se leen de las tarjetas ya plegadas, así que un `Write` que falló no cuenta: su `tool_result` ya lo marcó.
+
+El visor es uno solo para toda la conversación, no uno por tarjeta: desde el chat se abre un archivo a la vez, y así abrirlo desde una herramienta o desde el cierre del turno es el mismo gesto.
 
 ### Aceptación de reglas
 

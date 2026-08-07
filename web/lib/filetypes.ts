@@ -25,6 +25,53 @@ const CODIGO = new Set([
   '.toml', '.ini', '.cfg', '.lock', '.pyc', '.ipynb',
 ])
 
+// ------------------------------------------------------------ entrada/salida
+
+/** De dónde vino el archivo, que es lo que se quiere identificar de un vistazo. */
+export type FileFlow = 'entrada' | 'salida' | 'consulta' | 'proyecto'
+
+export const FLOW_LABEL: Record<FileFlow, string> = {
+  entrada: 'Entradas',
+  salida: 'Salidas',
+  consulta: 'Consultados',
+  proyecto: 'Resto del proyecto',
+}
+
+export const FLOW_HINT: Record<FileFlow, string> = {
+  entrada: 'Los que tú subiste',
+  salida: 'Los que produjo esta sesión',
+  consulta: 'Los que el agente abrió para leer',
+  proyecto: 'Ya estaban ahí',
+}
+
+export type FileAction = 'subido' | 'creado' | 'editado' | 'leído' | 'en el proyecto'
+
+export function flowOf(
+  action: FileAction,
+  mtimeMs: number | undefined,
+  sessionStart: number,
+  path = '',
+): FileFlow {
+  if (action === 'subido') return 'entrada'
+  // Todo lo que vive en `subidas/` lo puso una persona. La carpeta manda sobre
+  // la fecha: si no, una subida reciente pasaría por salida solo por ser nueva
+  // (y las de antes del registro de adjuntos no tienen evento que lo diga).
+  if (path.startsWith('subidas/')) return 'entrada'
+  if (action === 'creado' || action === 'editado') return 'salida'
+  if (action === 'leído') return 'consulta'
+  // Un archivo que la sesión no tocó con ninguna herramienta pero que cambió
+  // después de que empezó salió de un script: un .docx hecho con Python nace
+  // de un `Bash`, no de un `Write`, y era justo el que se perdía.
+  //
+  // El margen no es capricho: el andamiaje que se escribe al crear el proyecto
+  // (el CLAUDE.md) nace en el mismo instante que su primera sesión, y contarlo
+  // como salida ensucia la lista con algo que el usuario no pidió.
+  if (mtimeMs !== undefined && mtimeMs > sessionStart + SCAFFOLD_GRACE_MS) return 'salida'
+  return 'proyecto'
+}
+
+const SCAFFOLD_GRACE_MS = 2000
+
 export function extensionOf(name: string): string {
   const match = name.toLowerCase().match(/\.[^./\\]+$/)
   return match ? match[0] : ''

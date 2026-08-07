@@ -9,6 +9,8 @@ export function buildItems(events: StoredEvent[]): Item[] {
   const items: Item[] = []
   const toolIndex = new Map<string, number>()
   const permissionIndex = new Map<string, number>()
+  /** Dónde empezó el turno en curso, para saber qué archivos dejó. */
+  let turnStart = 0
 
   for (const event of events) {
     const key = String(event.seq)
@@ -65,7 +67,16 @@ export function buildItems(events: StoredEvent[]): Item[] {
         break
       }
 
-      case 'result':
+      case 'result': {
+        // Los archivos que dejó el turno se cuelgan de su cierre, que es donde
+        // el usuario mira al terminar. Se leen de las tarjetas ya plegadas, así
+        // que un `Write` que falló no cuenta: su `tool_result` ya lo marcó.
+        const produced: string[] = []
+        for (const item of items.slice(turnStart)) {
+          if (item.type !== 'tool' || item.isError) continue
+          const path = toolFilePath(item.name, item.input)
+          if (path && toolFlow(item.name) === 'salida' && !produced.includes(path)) produced.push(path)
+        }
         items.push({
           type: 'result',
           key,
@@ -73,8 +84,11 @@ export function buildItems(events: StoredEvent[]): Item[] {
           costUsd: event.costUsd,
           durationMs: event.durationMs,
           isError: event.isError,
+          produced,
         })
+        turnStart = items.length
         break
+      }
 
       case 'compacted':
         items.push({ type: 'compacted', key, ts: event.ts, preTokens: event.preTokens })
@@ -94,6 +108,27 @@ export function buildItems(events: StoredEvent[]): Item[] {
   }
 
   return items
+}
+
+/** Herramientas que escriben archivos: lo que salga de ellas es una salida. */
+const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
+/** Herramientas que solo miran. */
+const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'])
+
+export type ToolFlow = 'entrada' | 'salida' | null
+
+export function toolFlow(name: string): ToolFlow {
+  if (WRITE_TOOLS.has(name)) return 'salida'
+  if (READ_TOOLS.has(name)) return 'entrada'
+  // `Bash` puede hacer cualquier cosa: etiquetarlo sería mentir.
+  return null
+}
+
+/** Ruta del archivo que toca una herramienta, si toca alguno. */
+export function toolFilePath(name: string, input: Record<string, unknown>): string | null {
+  if (!WRITE_TOOLS.has(name) && name !== 'Read') return null
+  const raw = input.file_path ?? input.notebook_path
+  return typeof raw === 'string' && raw ? raw : null
 }
 
 /** Resumen de una línea para la cabecera de la tarjeta de herramienta. */

@@ -207,6 +207,15 @@ export type Item =
       request: PermissionRequestView
       decision: 'allow' | 'allow_always' | 'deny' | null
     }
-  | { type: 'result'; key: string; ts: number; costUsd: number; durationMs: number; isError: boolean }
+  | {
+      type: 'result'
+      key: string
+      ts: number
+      costUsd: number
+      durationMs: number
+      isError: boolean
+      /** Archivos que dejó el turno, en rutas absolutas tal cual las dio la herramienta. */
+      produced: string[]
+    }
   | { type: 'compacted'; key: string; ts: number; preTokens: number }
   | { type: 'notice'; key: string; ts: number; text: string; tone: 'info' | 'error' }

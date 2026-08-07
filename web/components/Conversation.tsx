@@ -1,11 +1,13 @@
 'use client'
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { buildItems, formatCost, formatDuration, summarizeTool } from '@/lib/items'
+import { buildItems, formatCost, formatDuration, summarizeTool, toolFilePath, toolFlow } from '@/lib/items'
 import { Markdown } from '@/lib/markdown'
 import { useStore } from '@/lib/store'
+import { relativize } from '@/lib/timeline'
 import type { Item, SessionView } from '@/lib/types'
-import { IconChevronRight } from './Icons'
+import { FileViewer } from './FileViewer'
+import { IconChevronRight, IconFile } from './Icons'
 
 export function Conversation({ session }: { session: SessionView }) {
   const { events, streaming } = useStore()
@@ -15,6 +17,18 @@ export function Conversation({ session }: { session: SessionView }) {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
+
+  // El visor vive aquí y no en cada tarjeta: desde el chat se abre un archivo
+  // a la vez, y así abrirlo desde una herramienta o desde el cierre del turno
+  // es el mismo gesto.
+  const [openFile, setOpenFile] = useState<string | null>(null)
+
+  /** Ruta lista para el visor, o null si cayó fuera del proyecto. */
+  const openPath = (raw: string) => {
+    const rel = relativize(raw, session.cwd)
+    if (rel.startsWith('/')) return
+    setOpenFile(rel)
+  }
 
   // Autoscroll solo si el usuario ya estaba abajo: leer historial no debe
   // arrastrarte al final cada vez que llega un token.
@@ -51,7 +65,15 @@ export function Conversation({ session }: { session: SessionView }) {
           </div>
         </div>
       ) : (
-        items.map((item) => <ItemView key={item.key} item={item} sessionId={session.id} />)
+        items.map((item) => (
+          <ItemView
+            key={item.key}
+            item={item}
+            sessionId={session.id}
+            cwd={session.cwd}
+            onOpenFile={openPath}
+          />
+        ))
       )}
 
       {buffer && (
@@ -60,11 +82,25 @@ export function Conversation({ session }: { session: SessionView }) {
           <span className="caret" />
         </div>
       )}
+
+      {openFile && (
+        <FileViewer projectId={session.projectId} path={openFile} onClose={() => setOpenFile(null)} />
+      )}
     </div>
   )
 }
 
-function ItemView({ item, sessionId }: { item: Item; sessionId: string }) {
+function ItemView({
+  item,
+  sessionId,
+  cwd,
+  onOpenFile,
+}: {
+  item: Item
+  sessionId: string
+  cwd: string
+  onOpenFile: (path: string) => void
+}) {
   // `data-seq` es el ancla que usa el panel lateral para saltar a un punto.
   switch (item.type) {
     case 'user':
@@ -91,16 +127,33 @@ function ItemView({ item, sessionId }: { item: Item; sessionId: string }) {
       )
 
     case 'tool':
-      return <ToolCard item={item} />
+      return <ToolCard item={item} cwd={cwd} onOpenFile={onOpenFile} />
 
     case 'permission':
       return <PermissionCard item={item} sessionId={sessionId} />
 
     case 'result':
       return (
-        <div className="meta-chip">
-          {item.isError ? 'terminó con error · ' : ''}
-          {formatDuration(item.durationMs)} · {formatCost(item.costUsd)}
+        <div className="turn-end">
+          {item.produced.length > 0 && (
+            <div className="produced">
+              <span className="produced-label">
+                {item.produced.length === 1 ? 'Archivo generado' : `${item.produced.length} archivos generados`}
+              </span>
+              <div className="produced-list">
+                {item.produced.map((path) => (
+                  <button key={path} className="produced-file" onClick={() => onOpenFile(path)}>
+                    <IconFile size={13} />
+                    <span>{relativize(path, cwd)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="meta-chip">
+            {item.isError ? 'terminó con error · ' : ''}
+            {formatDuration(item.durationMs)} · {formatCost(item.costUsd)}
+          </div>
         </div>
       )
 
@@ -115,20 +168,40 @@ function ItemView({ item, sessionId }: { item: Item; sessionId: string }) {
   }
 }
 
-function ToolCard({ item }: { item: Extract<Item, { type: 'tool' }> }) {
+function ToolCard({
+  item,
+  cwd,
+  onOpenFile,
+}: {
+  item: Extract<Item, { type: 'tool' }>
+  cwd: string
+  onOpenFile: (path: string) => void
+}) {
   const [open, setOpen] = useState(false)
   const summary = summarizeTool(item.name, item.input)
   const inputJson = JSON.stringify(item.input, null, 2)
+  const flow = toolFlow(item.name)
+  const path = toolFilePath(item.name, item.input)
+  // Una ruta fuera del proyecto no la puede abrir el visor: no se ofrece.
+  const openable = path && !item.isError && !relativize(path, cwd).startsWith('/')
 
   return (
     <div className={`tool${item.isError ? ' error' : ''}`} data-seq={item.key}>
       <button className="tool-head" onClick={() => setOpen((v) => !v)}>
+        {flow && <span className={`flow-tag ${flow}`}>{flow === 'salida' ? '↑' : '↓'}</span>}
         <span className="tool-name">{item.name}</span>
         <span className="tool-summary">{summary || (item.result === null ? 'ejecutando…' : '')}</span>
         <span className="tool-chevron" style={{ transform: open ? 'rotate(90deg)' : undefined }}>
           <IconChevronRight size={14} />
         </span>
       </button>
+
+      {openable && (
+        <button className="tool-open" onClick={() => onOpenFile(path)}>
+          <IconFile size={13} />
+          <span>Ver {relativize(path, cwd).split('/').pop()}</span>
+        </button>
+      )}
 
       {open && (
         <>
