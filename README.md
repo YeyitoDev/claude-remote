@@ -55,7 +55,7 @@ El primer arranque crea el administrador e imprime su token **una sola vez** (el
 ```
   ┌─ PRIMER ARRANQUE ─────────────────────────────────────────
   │ Se creó el administrador. Este token no se vuelve a mostrar:
-  │   U1xX7q1QwpHwj3Ylw0Ps9ieKnQcGop_y
+  │   ‹aquí va tu token, 32 caracteres›
   └───────────────────────────────────────────────────────────
 ```
 
