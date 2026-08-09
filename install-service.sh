@@ -139,13 +139,14 @@ cat >"$PLIST" <<PLIST_EOF
   <key>RunAtLoad</key>
   <true/>
 
-  <!-- Solo se relanza si terminó mal: un fallo de red al arrancar se
-       recupera solo, y una parada limpia no entra en bucle. -->
+  <!-- Se relanza siempre, termine como termine.
+       Antes solo volvía si había terminado mal, y eso dejó el portal caído: al
+       suspenderse el Mac el servidor recibe SIGTERM y cierra *limpiamente*, con
+       código 0 — justo el caso que no se reintentaba. Para algo que debe estar
+       disponible, un cierre limpio es cuando más falta hace volver. Para
+       pararlo a propósito está la opción --uninstall. -->
   <key>KeepAlive</key>
-  <dict>
-    <key>SuccessfulExit</key>
-    <false/>
-  </dict>
+  <true/>
 
   <!-- Si la causa del fallo es permanente (Tailscale sin sesión, por
        ejemplo), esto evita reintentar en bucle cerrado. -->
