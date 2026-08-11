@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { config } from './config.js'
-import { loadUsers, saveUsers } from './store.js'
-import type { Limits, Role, User } from './types.js'
+import { loadDevices, loadUsers, saveDevices, saveUsers } from './store.js'
+import type { DeviceToken, Limits, Role, User } from './types.js'
 
 export class HttpError extends Error {
   constructor(
@@ -24,8 +24,19 @@ export class Auth {
   /** hash → usuario. La búsqueda por hash hace irrelevante el timing. */
   private byHash = new Map<string, User>()
 
+  /**
+   * Tokens emitidos al entrar con passkey, uno por dispositivo.
+   *
+   * Van aparte del token del usuario para que perder el móvil se resuelva
+   * revocando ese dispositivo, sin echar a los demás — que es justo lo que
+   * pasaba cuando la única credencial era una y compartida.
+   */
+  private devices: DeviceToken[]
+  private byDeviceHash = new Map<string, DeviceToken>()
+
   constructor() {
     this.users = loadUsers()
+    this.devices = loadDevices<DeviceToken>()
     this.reindex()
   }
 
@@ -39,6 +50,7 @@ export class Auth {
 
   private reindex() {
     this.byHash = new Map(this.users.map((u) => [u.tokenHash, u]))
+    this.byDeviceHash = new Map(this.devices.map((d) => [d.tokenHash, d]))
   }
 
   private persist() {
@@ -74,15 +86,65 @@ export class Auth {
   /** Devuelve el usuario del token, o null. Marca `lastSeenAt`. */
   resolve(token: string | undefined): User | null {
     if (!token) return null
-    const user = this.byHash.get(hashToken(token))
+    const hash = hashToken(token)
+
+    // Primero el token del usuario; si no, uno de dispositivo (passkey).
+    let user = this.byHash.get(hash)
+    let device: DeviceToken | undefined
+    if (!user) {
+      device = this.byDeviceHash.get(hash)
+      if (device) user = this.get(device.userId)
+    }
     if (!user || user.disabled) return null
+
     const now = Date.now()
     // Se persiste como mucho una vez por minuto para no escribir en cada request.
     if (!user.lastSeenAt || now - user.lastSeenAt > 60_000) {
       user.lastSeenAt = now
+      if (device) device.lastUsedAt = now
       this.persist()
     }
     return user
+  }
+
+  // ------------------------------------------------- tokens de dispositivo
+
+  /** Emite el token que usará este dispositivo tras entrar con passkey. */
+  issueDeviceToken(userId: string, label: string): string {
+    const token = generateToken()
+    this.devices.push({
+      id: randomUUID(),
+      userId,
+      tokenHash: hashToken(token),
+      tokenHint: token.slice(0, 6),
+      label: label.trim() || 'Dispositivo',
+      createdAt: Date.now(),
+      lastUsedAt: Date.now(),
+    })
+    this.persistDevices()
+    return token
+  }
+
+  devicesOf(userId: string): DeviceToken[] {
+    return this.devices.filter((d) => d.userId === userId).sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  revokeDevice(userId: string, id: string) {
+    const before = this.devices.length
+    this.devices = this.devices.filter((d) => !(d.id === id && d.userId === userId))
+    if (this.devices.length === before) throw new HttpError(404, 'Ese dispositivo no existe.')
+    this.persistDevices()
+  }
+
+  /** Al rotar el token o dar de baja al usuario, sus dispositivos caen con él. */
+  revokeAllDevices(userId: string) {
+    this.devices = this.devices.filter((d) => d.userId !== userId)
+    this.persistDevices()
+  }
+
+  private persistDevices() {
+    this.reindex()
+    saveDevices(this.devices)
   }
 
   create(input: { name: string; role?: Role; limits?: Partial<Limits> }): { user: User; token: string } {

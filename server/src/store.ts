@@ -81,6 +81,12 @@ export function linksMtime(): number {
   }
 }
 
+// ----------------------------------------------- tokens de dispositivo
+
+export const loadDevices = <T>() => readJson<T[]>(config.devicesFile, [])
+// 0600 igual que los usuarios: son credenciales, aunque estén hasheadas.
+export const saveDevices = debouncedWriter<unknown[]>(config.devicesFile, 0o600)
+
 // ------------------------------------------------------------------ sesiones
 
 export const loadSessions = <T>() => readJson<T[]>(config.sessionsFile, [])

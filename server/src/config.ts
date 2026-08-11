@@ -23,6 +23,8 @@ export const config = {
   sessionsFile: join(DATA_DIR, 'sessions.json'),
   usageFile: join(DATA_DIR, 'usage.jsonl'),
   linksFile: join(DATA_DIR, 'links.json'),
+  /** Tokens que emite una passkey al entrar: uno por dispositivo. */
+  devicesFile: join(DATA_DIR, 'devices.json'),
   workspace: WORKSPACE,
 
   port: Number(process.env.CR_PORT || 8787),

@@ -26,6 +26,22 @@ export type User = {
   lastSeenAt: number | null
 }
 
+/**
+ * Token emitido a un dispositivo tras entrar con passkey.
+ *
+ * Va aparte del token del usuario para que perder el móvil se resuelva
+ * revocando ese dispositivo y no echando a los demás.
+ */
+export type DeviceToken = {
+  id: string
+  userId: string
+  tokenHash: string
+  tokenHint: string
+  label: string
+  createdAt: number
+  lastUsedAt: number | null
+}
+
 export type UserView = Omit<User, 'tokenHash'> & {
   usage: UsageSummary
   projectCount: number

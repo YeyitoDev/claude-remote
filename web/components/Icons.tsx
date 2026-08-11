@@ -42,6 +42,13 @@ export const IconMic = ({ size = 19 }: Props) => (
   </svg>
 )
 
+export const IconKey = ({ size = 17 }: Props) => (
+  <svg {...base(size)}>
+    <circle cx="8" cy="12" r="4" />
+    <path d="M12 12h9M17.5 12v3.5M20 12v2.5" />
+  </svg>
+)
+
 export const IconSettings = ({ size = 19 }: Props) => (
   <svg {...base(size)}>
     <circle cx="12" cy="12" r="3.2" />

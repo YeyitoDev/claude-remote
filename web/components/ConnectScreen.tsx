@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { normalizeUrl } from '@/lib/api'
+import { loginWithPasskey, passkeyError, passkeysUsable, secureEnough } from '@/lib/passkey'
 import { useStore } from '@/lib/store'
+import { IconKey } from './Icons'
 
 /** Si la PWA se sirve desde el propio servidor, el origen ya es la respuesta correcta. */
 function guessUrl(): string {
@@ -18,6 +20,30 @@ export function ConnectScreen() {
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
+  const [canPasskey, setCanPasskey] = useState(false)
+
+  // En un efecto: el HTML es estático y consultar el autenticador durante el
+  // render rompería la hidratación.
+  useEffect(() => {
+    void passkeysUsable().then(setCanPasskey)
+  }, [])
+
+  const withPasskey = async () => {
+    const normalized = normalizeUrl(url)
+    if (!normalized) {
+      setLocalError('Falta la dirección del servidor.')
+      return
+    }
+    setBusy(true)
+    setLocalError(null)
+    try {
+      await connect(await loginWithPasskey(normalized))
+    } catch (err: any) {
+      setLocalError(passkeyError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const submit = async () => {
     const normalized = normalizeUrl(url)
@@ -74,6 +100,26 @@ export function ConnectScreen() {
         <button className="btn primary block" onClick={() => void submit()} disabled={busy}>
           {busy ? 'Entrando…' : 'Entrar'}
         </button>
+
+        {canPasskey && (
+          <>
+            <div className="or">o</div>
+            <button
+              className="btn block"
+              onClick={() => void withPasskey()}
+              disabled={busy || !secureEnough(url)}
+            >
+              <span className="row-center">
+                <IconKey size={16} /> Entrar con Face ID o Touch ID
+              </span>
+            </button>
+            <span className="field-hint">
+              {secureEnough(url)
+                ? 'Solo si ya registraste una passkey desde este servidor. La primera vez entra con el token y añádela en Mi cuenta.'
+                : 'Las passkeys necesitan una dirección https (o localhost). Por la IP de la red local el navegador no las permite.'}
+            </span>
+          </>
+        )}
       </div>
     </div>
   )

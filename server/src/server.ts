@@ -11,8 +11,18 @@ import { fetchIntoProject, readFileView, resolveForStream, saveUpload } from './
 import { addManualEntry, readKnowledge } from './knowledge.js'
 import { defaultLinkHint, Links } from './links.js'
 import { SessionManager } from './manager.js'
+import {
+  authenticationOptions,
+  passkeyView,
+  passkeysOf,
+  registrationOptions,
+  removeAllFor as removeAllPasskeys,
+  removePasskey,
+  verifyAuthentication,
+  verifyRegistration,
+} from './passkeys.js'
 import { assertInsideProject, readTree } from './projects.js'
-import type { Project, ProjectView, StoredEvent, User, UserView } from './types.js'
+import type { DeviceToken, Project, ProjectView, StoredEvent, User, UserView } from './types.js'
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -37,6 +47,47 @@ export function buildServer(manager: SessionManager) {
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, version: 2 }))
 
+  const wrap =
+    (fn: (req: Request, res: Response) => Promise<unknown> | unknown) =>
+    async (req: Request, res: Response) => {
+      try {
+        await fn(req, res)
+      } catch (err) {
+        if (err instanceof HttpError) return res.status(err.status).json({ error: err.message })
+        console.error('[api]', err)
+        res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+      }
+    }
+
+  // ----------------------------------------------------- passkeys (entrar)
+
+  /**
+   * Estas dos van antes del middleware de token porque son justo la forma de
+   * entrar sin tenerlo. La credencial es la passkey, verificada contra el reto.
+   */
+  app.post(
+    '/api/auth/passkey/options',
+    wrap(async (req, res) => {
+      const { rpId, origin } = webauthnScope(req)
+      res.json({ options: await authenticationOptions(rpId, origin) })
+    }),
+  )
+
+  app.post(
+    '/api/auth/passkey',
+    wrap(async (req, res) => {
+      const { rpId, origin } = webauthnScope(req)
+      const { userId } = await verifyAuthentication(req.body?.response, rpId, origin)
+
+      const user = auth.get(userId)
+      if (!user || user.disabled) throw new HttpError(403, 'Esa cuenta no está activa.')
+
+      const label = typeof req.body?.label === 'string' ? req.body.label : ''
+      const token = auth.issueDeviceToken(user.id, label)
+      res.json({ token, user: userView(user) })
+    }),
+  )
+
   // -------------------------------------------------------------- auth
 
   app.use('/api', (req: Request, res: Response, next: NextFunction) => {
@@ -50,18 +101,6 @@ export function buildServer(manager: SessionManager) {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo para administradores.' })
     next()
   }
-
-  const wrap =
-    (fn: (req: Request, res: Response) => Promise<unknown> | unknown) =>
-    async (req: Request, res: Response) => {
-      try {
-        await fn(req, res)
-      } catch (err) {
-        if (err instanceof HttpError) return res.status(err.status).json({ error: err.message })
-        console.error('[api]', err)
-        res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
-      }
-    }
 
   // -------------------------------------------------------------- vistas
 
@@ -310,6 +349,52 @@ export function buildServer(manager: SessionManager) {
     }),
   )
 
+  // ------------------------------------------------------------ passkeys
+
+  app.get(
+    '/api/passkeys',
+    wrap((req, res) =>
+      res.json({
+        passkeys: passkeysOf(req.user.id).map(passkeyView),
+        devices: auth.devicesOf(req.user.id).map(deviceView),
+      }),
+    ),
+  )
+
+  app.post(
+    '/api/passkeys/options',
+    wrap(async (req, res) => {
+      const { rpId, origin } = webauthnScope(req)
+      res.json({ options: await registrationOptions(req.user, rpId, origin) })
+    }),
+  )
+
+  app.post(
+    '/api/passkeys',
+    wrap(async (req, res) => {
+      const { rpId, origin } = webauthnScope(req)
+      const key = await verifyRegistration(req.user, req.body ?? {}, rpId, origin)
+      res.status(201).json({ passkey: passkeyView(key) })
+    }),
+  )
+
+  app.delete(
+    '/api/passkeys/:id',
+    wrap((req, res) => {
+      removePasskey(req.user.id, req.params.id)
+      res.json({ ok: true })
+    }),
+  )
+
+  /** Cerrar la sesión de un dispositivo concreto sin tocar a los demás. */
+  app.delete(
+    '/api/devices/:id',
+    wrap((req, res) => {
+      auth.revokeDevice(req.user.id, req.params.id)
+      res.json({ ok: true })
+    }),
+  )
+
   // ------------------------------------------------------------ sesiones
 
   app.get(
@@ -448,6 +533,10 @@ export function buildServer(manager: SessionManager) {
     adminOnly,
     wrap((req, res) => {
       const { user, token } = auth.rotate(req.params.id)
+      // Rotar es el botón de "he perdido el control de esta cuenta": dejar
+      // vivas las passkeys y sus dispositivos haría que no sirviera de nada.
+      auth.revokeAllDevices(user.id)
+      removeAllPasskeys(user.id)
       res.json({ user: userView(user), token })
     }),
   )
@@ -461,6 +550,8 @@ export function buildServer(manager: SessionManager) {
       for (const session of manager.forUser({ ...target, role: 'user' } as User)) {
         await manager.remove(session.meta.id)
       }
+      auth.revokeAllDevices(req.params.id)
+      removeAllPasskeys(req.params.id)
       auth.remove(req.params.id)
       res.json({ ok: true })
     }),
@@ -616,6 +707,42 @@ function normalizeAttachments(project: Project, raw: unknown): string[] {
         return false
       }
     })
+}
+
+/**
+ * Dominio y origen para WebAuthn, deducidos de la propia petición.
+ *
+ * Una passkey queda atada al dominio donde se registró, y esta app se alcanza
+ * por varias direcciones a la vez (el túnel, la LAN, localhost). Fijar el
+ * dominio en configuración obligaría a elegir una; deducirlo deja que cada una
+ * tenga las suyas, que es como funciona WebAuthn de todas formas.
+ */
+function webauthnScope(req: Request): { rpId: string; origin: string } {
+  const origin = req.headers.origin
+  if (typeof origin === 'string' && origin) {
+    try {
+      return { rpId: new URL(origin).hostname, origin }
+    } catch {
+      /* cabecera basura: se cae al Host */
+    }
+  }
+
+  // Sin `Origin` (algún cliente nativo) se reconstruye desde el Host. Detrás
+  // del túnel el esquema real es https aunque aquí llegue en claro.
+  const host = req.headers.host ?? `localhost:${config.port}`
+  const hostname = host.split(':')[0]
+  const proto = (req.headers['x-forwarded-proto'] as string) || (hostname === 'localhost' ? 'http' : 'https')
+  return { rpId: hostname, origin: `${proto}://${host}` }
+}
+
+function deviceView(device: DeviceToken) {
+  return {
+    id: device.id,
+    label: device.label,
+    tokenHint: device.tokenHint,
+    createdAt: device.createdAt,
+    lastUsedAt: device.lastUsedAt,
+  }
 }
 
 /** ¿Es la petición cuyo cuerpo es un archivo y no debe tocar el parser de JSON? */

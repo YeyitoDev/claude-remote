@@ -437,6 +437,26 @@ Debajo del enlace hay un desplegable con el token suelto, por si prefieres dicta
 
 ---
 
+## Passkeys (Face ID / Touch ID)
+
+El token es la credencial de origen, pero no tiene por qué ser la de todos los días. Una vez dentro, **Mi cuenta → Passkeys → Añadir passkey** convierte ese dispositivo en una llave: a partir de ahí se entra con Face ID o Touch ID y deja de hacer falta guardar el enlace en ninguna parte. En Apple la passkey se sincroniza por iCloud, así que registrarla en el Mac la deja disponible en el iPhone.
+
+Se registran **credenciales descubribles** (`residentKey: required`): al entrar no hay que escribir ni elegir usuario, el propio dispositivo dice a quién pertenece la passkey.
+
+| Pieza | Dónde vive |
+|---|---|
+| Passkey | En el llavero del dispositivo. El servidor solo guarda la clave **pública**, en `passkeys.json`. |
+| Token de dispositivo | Lo emite el servidor al entrar con passkey, uno por dispositivo, hasheado en `devices.json`. |
+
+Los tokens de dispositivo van **aparte** del token del usuario: perder el móvil se resuelve revocando ese dispositivo desde Mi cuenta, sin echar a los demás — que es justo lo que no se podía hacer cuando la única credencial era una y compartida.
+
+**Rotar el token de un usuario borra también sus passkeys y sus dispositivos.** Rotar es el botón de «he perdido el control de esta cuenta»; dejar vivas las passkeys haría que no sirviera de nada.
+
+Dos límites que vienen de WebAuthn, no de aquí:
+
+- Una passkey queda atada al **dominio** donde se registró. El dominio se deduce de la petición, así que cada dirección tiene las suyas: la registrada en el túnel no sirve por `localhost`. Con Tailscale Funnel la URL es fija, así que se registra una vez y ya.
+- Hace falta **contexto seguro**: https o `localhost`. Por la IP de la LAN en claro el navegador no expone la API, así que ahí el botón aparece desactivado y lo dice, en vez de fallar sin explicación.
+
 ## Si te quedas fuera
 
 Si pierdes el token del admin (lo rotaste sin copiarlo, se borró el navegador…), no hay que editar nada a mano:

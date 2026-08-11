@@ -64,6 +64,24 @@ export type ProjectView = {
   lastActivityAt: number | null
 }
 
+export type PasskeyView = {
+  id: string
+  label: string
+  /** Dominio donde se registró: una passkey solo vale en el suyo. */
+  rpId: string
+  createdAt: number
+  lastUsedAt: number | null
+}
+
+/** Un dispositivo que entró con passkey y tiene su propio token. */
+export type DeviceView = {
+  id: string
+  label: string
+  tokenHint: string
+  createdAt: number
+  lastUsedAt: number | null
+}
+
 export type TreeNode = {
   name: string
   path: string

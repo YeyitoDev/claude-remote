@@ -1,6 +1,8 @@
 import type {
   AccessLink,
+  DeviceView,
   FileView,
+  PasskeyView,
   KnowledgeView,
   Limits,
   PermissionMode,
@@ -82,8 +84,35 @@ const post = (body?: unknown): RequestInit => ({
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 })
 
+/** Las dos rutas de entrada no llevan token: la credencial es la passkey. */
+async function open<T>(url: string, path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${normalizeUrl(url)}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  })
+  const text = await res.text()
+  const parsed = text ? JSON.parse(text) : {}
+  if (!res.ok) throw new ApiError(res.status, parsed?.error || `Error ${res.status}`)
+  return parsed as T
+}
+
 export const api = {
   me: (c: Connection) => request<Snapshot>(c, '/api/me'),
+
+  // passkeys
+  passkeyLoginOptions: (url: string) => open<{ options: unknown }>(url, '/api/auth/passkey/options', {}),
+  passkeyLogin: (url: string, response: unknown, label: string) =>
+    open<{ token: string; user: UserView }>(url, '/api/auth/passkey', { response, label }),
+  passkeys: (c: Connection) => request<{ passkeys: PasskeyView[]; devices: DeviceView[] }>(c, '/api/passkeys'),
+  passkeyRegisterOptions: (c: Connection) =>
+    request<{ options: unknown }>(c, '/api/passkeys/options', post({})),
+  passkeyRegister: (c: Connection, response: unknown, label: string) =>
+    request<{ passkey: PasskeyView }>(c, '/api/passkeys', post({ response, label })),
+  deletePasskey: (c: Connection, id: string) =>
+    request<{ ok: true }>(c, `/api/passkeys/${id}`, { method: 'DELETE' }),
+  deleteDevice: (c: Connection, id: string) =>
+    request<{ ok: true }>(c, `/api/devices/${id}`, { method: 'DELETE' }),
 
   // proyectos
   projects: (c: Connection) => request<{ projects: ProjectView[] }>(c, '/api/projects'),
